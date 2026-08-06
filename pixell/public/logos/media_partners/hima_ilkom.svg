@@ -1,0 +1,5 @@
+<svg width="140" height="60" viewBox="0 0 140 60" xmlns="http://www.w3.org/2000/svg">
+  <circle cx="70" cy="30" r="24" fill="#0D1140" stroke="#3FE1D6" stroke-width="2"/>
+  <text x="70" y="31" font-family="sans-serif" font-weight="900" font-size="9" fill="#3FE1D6" text-anchor="middle">HIMA ILKOM</text>
+  <text x="70" y="41" font-family="sans-serif" font-size="7" fill="#FFD500" text-anchor="middle">FMIPA UNNES</text>
+</svg>

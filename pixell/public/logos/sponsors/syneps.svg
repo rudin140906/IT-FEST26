@@ -1,0 +1,6 @@
+<svg width="150" height="60" viewBox="0 0 150 60" xmlns="http://www.w3.org/2000/svg">
+  <polygon points="20,15 35,30 20,45 28,30" fill="#FF4D8D"/>
+  <polygon points="28,30 35,45 42,30" fill="#3FE1D6"/>
+  <text x="50" y="32" font-family="sans-serif" font-weight="900" font-size="14" fill="#F5F1E0">SYNEPS</text>
+  <text x="50" y="44" font-family="sans-serif" font-size="9" fill="#FFD500" letter-spacing="2">ACADEMY</text>
+</svg>

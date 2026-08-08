@@ -46,7 +46,7 @@ export default function Footer() {
               </svg>
             </a>
             <a
-              href="https://wa.me/62895604953816"
+              href="https://wa.me/62882279840310"
               target="_blank"
               rel="noopener noreferrer"
               className="w-9 h-9 rounded-full bg-pink text-ink border-2 border-ink shadow-hard-sm flex items-center justify-center hover:bg-yellow hover:scale-110 transition-all duration-300"
@@ -119,8 +119,8 @@ export default function Footer() {
                 <Phone size={14} />
               </span>
               <div className="space-y-0.5">
-                <div>+62895604953816</div>
-                <div>+6285366799782</div>
+                <div>08822-7984-0310</div>
+                <div>08838-1925-5395</div>
               </div>
             </li>
             <li className="flex items-center gap-3">
@@ -138,19 +138,19 @@ export default function Footer() {
         <div className="max-w-6xl mx-auto px-6 flex flex-col md:flex-row items-center justify-between gap-4 text-xs font-mono text-cream/60">
           <div>© 2026 IT-Festival. All rights reserved.</div>
 
-          {/* Org Logo Badges */}
-          <div className="flex items-center gap-2">
-            <div className="w-7 h-7 rounded-full bg-navy-700 border border-ink flex items-center justify-center overflow-hidden">
-              <Image src="/logos/logo_navbar.png" alt="IT-Festival" width={20} height={20} className="object-contain" />
+          {/* Org Logo List: IT-Fest -> Lotus Flame -> HMJ MI -> POLSRI (Large, Clean Logos Without White Circular Background) */}
+          <div className="flex items-center gap-4 sm:gap-5">
+            <div className="w-9 h-9 sm:w-11 sm:h-11 flex items-center justify-center shrink-0 hover:scale-110 transition-transform">
+              <Image src="/logos/logo_navbar.png" alt="IT-Festival Logo" width={44} height={44} className="object-contain max-h-full" />
             </div>
-            <div className="w-7 h-7 rounded-full bg-pink/20 border border-pink/50 flex items-center justify-center text-[10px] font-bold text-pink">
-              IF
+            <div className="w-9 h-9 sm:w-11 sm:h-11 flex items-center justify-center shrink-0 hover:scale-110 transition-transform">
+              <Image src="/logos/logo_itfest.png" alt="IT-Fest Lotus Logo" width={44} height={44} className="object-contain max-h-full" />
             </div>
-            <div className="w-7 h-7 rounded-full bg-cyan/20 border border-cyan/50 flex items-center justify-center text-[10px] font-bold text-cyan">
-              IT
+            <div className="w-9 h-9 sm:w-11 sm:h-11 flex items-center justify-center shrink-0 hover:scale-110 transition-transform">
+              <Image src="/logos/logo_hmj_mi.png" alt="HMJ MI Logo" width={44} height={44} className="object-contain max-h-full" />
             </div>
-            <div className="w-7 h-7 rounded-full bg-yellow/20 border border-yellow/50 flex items-center justify-center text-[10px] font-bold text-yellow">
-              PL
+            <div className="w-9 h-9 sm:w-11 sm:h-11 flex items-center justify-center shrink-0 hover:scale-110 transition-transform">
+              <Image src="/logos/logo_polsri.png" alt="POLSRI Logo" width={44} height={44} className="object-contain max-h-full" />
             </div>
           </div>
         </div>

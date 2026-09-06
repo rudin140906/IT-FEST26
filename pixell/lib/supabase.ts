@@ -15,4 +15,6 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   },
 });
 
-export const STORAGE_BUCKET = "itfest";
+export const STORAGE_BUCKET =
+  process.env.NEXT_PUBLIC_STORAGE_BUCKET || "itfest";
+

@@ -1,118 +1,126 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import Link from "next/link";
 import {
-  Plus,
   Edit2,
   Trash2,
-  ExternalLink,
+  Plus,
   RefreshCw,
-  Upload,
-  Image as ImageIcon,
-  Search,
+  ExternalLink,
   ArrowLeft,
   CheckCircle2,
   AlertCircle,
   LogOut,
   ShieldCheck,
-  Calendar,
   Building2,
+  Calendar,
   Sparkles,
+  Mic,
+  Search,
+  Eye,
+  EyeOff,
 } from "lucide-react";
+import { apiPath, withBasePath } from "@/lib/site-path";
 
-export interface Partner {
+// Types & Interfaces
+interface PartnerItem {
   id: number;
   name: string;
   logoUrl: string;
   type: "sponsor" | "media_partner";
   websiteUrl?: string;
+  isVisible?: boolean;
+  logoScale?: number;
+  logoPositionX?: number;
+  logoPositionY?: number;
 }
 
-export interface TimelineItem {
+interface TimelineItem {
   id: number;
   title: string;
   date: string;
   category?: string;
   badgeColor?: "pink" | "cyan" | "yellow";
+  imageUrl?: string;
 }
 
-export default function AdminDashboardPage() {
+const MAX_UPLOAD_SIZE = 10 * 1024 * 1024;
+
+// Helpers
+function normalizePartnerWebsiteUrl(url?: string): string {
+  if (!url) return "";
+  const trimmed = url.trim();
+  if (!trimmed) return "";
+  if (/^https?:\/\//i.test(trimmed)) return trimmed;
+  return `https://${trimmed}`;
+}
+
+function formatPartnerWebsiteLabel(url: string): string {
+  return url.replace(/^https?:\/\//i, "").replace(/\/$/, "");
+}
+
+function isManagedUploadUrl(url: string): boolean {
+  return url.includes("/uploads/") || url.includes("/api/uploads/");
+}
+
+function clampLogoControl(value: unknown, fallback: number, min: number, max: number) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.min(max, Math.max(min, parsed));
+}
+
+function partnerLogoStyle(item: Pick<PartnerItem, "logoScale" | "logoPositionX" | "logoPositionY">) {
+  const scale = clampLogoControl(item.logoScale, 100, 55, 180);
+  const x = clampLogoControl(item.logoPositionX, 50, 0, 100);
+  const y = clampLogoControl(item.logoPositionY, 50, 0, 100);
+
+  return {
+    width: `${scale}%`,
+    height: `${scale}%`,
+    objectPosition: `${x}% ${y}%`,
+  };
+}
+
+function hasRecentClientAdminSession() {
+  return typeof window !== "undefined" && sessionStorage.getItem("admin_auth") === "true";
+}
+
+export default function AdminPartnersPage() {
   const router = useRouter();
 
-  // Authentication State
+  // Auth state
   const [verifyingAuth, setVerifyingAuth] = useState(true);
 
-  // Main Dashboard Tab: "partners" or "timeline"
+  // Active Main Tab ("partners" or "timeline")
   const [mainTab, setMainTab] = useState<"partners" | "timeline">("partners");
 
-  // === PARTNERS STATE ===
-  const [partners, setPartners] = useState<Partner[]>([]);
-  const [sponsorsCount, setSponsorsCount] = useState(0);
-  const [mediaCount, setMediaCount] = useState(0);
-  const [loadingPartners, setLoadingPartners] = useState(true);
+  // Toast
+  const [toast, setToast] = useState<{ type: "success" | "error"; message: string } | null>(null);
 
-  const [partnerFilterTab, setPartnerFilterTab] = useState<"all" | "sponsor" | "media_partner">("all");
-  const [partnerSearch, setPartnerSearch] = useState("");
-
-  const [isPartnerModalOpen, setIsPartnerModalOpen] = useState(false);
-  const [editingPartner, setEditingPartner] = useState<Partner | null>(null);
-
-  const [partnerName, setPartnerName] = useState("");
-  const [partnerType, setPartnerType] = useState<"sponsor" | "media_partner">("sponsor");
-  const [partnerLogoMode, setPartnerLogoMode] = useState<"upload" | "url">("upload");
-  const [partnerLogoUrl, setPartnerLogoUrl] = useState("");
-  const [partnerWebsiteUrl, setPartnerWebsiteUrl] = useState("");
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [previewUrl, setPreviewUrl] = useState<string>("");
-  const [uploading, setUploading] = useState(false);
-  const [submittingPartner, setSubmittingPartner] = useState(false);
-  const [deletePartnerTarget, setDeletePartnerTarget] = useState<Partner | null>(null);
-
-  // === TIMELINE STATE ===
-  const [timelineList, setTimelineList] = useState<TimelineItem[]>([]);
-  const [loadingTimeline, setLoadingTimeline] = useState(true);
-  const [timelineSearch, setTimelineSearch] = useState("");
-
-  const [isTimelineModalOpen, setIsTimelineModalOpen] = useState(false);
-  const [editingTimeline, setEditingTimeline] = useState<TimelineItem | null>(null);
-
-  const [timelineTitle, setTimelineTitle] = useState("");
-  const [timelineDate, setTimelineDate] = useState("");
-  const [timelineCategory, setTimelineCategory] = useState("REGISTRASI");
-  const [timelineBadgeColor, setTimelineBadgeColor] = useState<"pink" | "cyan" | "yellow">("pink");
-  const [submittingTimeline, setSubmittingTimeline] = useState(false);
-  const [deleteTimelineTarget, setDeleteTimelineTarget] = useState<TimelineItem | null>(null);
-
-  // Toast Notification
-  const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
-
-  const showToast = (message: string, type: "success" | "error" = "success") => {
+  const showToast = useCallback((message: string, type: "success" | "error" = "success") => {
     setToast({ message, type });
-    setTimeout(() => {
-      setToast(null);
-    }, 3500);
-  };
+  }, []);
 
-  // Auth Verification
+  useEffect(() => {
+    if (toast) {
+      const timer = setTimeout(() => setToast(null), 3500);
+      return () => clearTimeout(timer);
+    }
+  }, [toast]);
+
+  // Auth check
   useEffect(() => {
     async function checkAuth() {
+      if (hasRecentClientAdminSession()) {
+        setVerifyingAuth(false);
+        return;
+      }
+
       try {
-        const isClientAuthed =
-          typeof window !== "undefined" &&
-          (sessionStorage.getItem("admin_auth") === "true" ||
-            document.cookie.includes("admin_session=authenticated"));
-
-        if (isClientAuthed) {
-          setVerifyingAuth(false);
-          fetchPartners();
-          fetchTimeline();
-          return;
-        }
-
-        const res = await fetch("/api/admin/check");
+        const res = await fetch(apiPath("/admin/check"));
         if (!res.ok) {
           router.replace("/admin");
           return;
@@ -126,110 +134,173 @@ export default function AdminDashboardPage() {
         if (typeof window !== "undefined") {
           sessionStorage.setItem("admin_auth", "true");
         }
-
         setVerifyingAuth(false);
-        fetchPartners();
-        fetchTimeline();
-      } catch (err) {
-        console.error("Auth check failed:", err);
+      } catch {
         router.replace("/admin");
       }
     }
-
     checkAuth();
   }, [router]);
 
-  const handleLogout = async () => {
-    try {
-      if (typeof window !== "undefined") {
-        sessionStorage.removeItem("admin_auth");
-        document.cookie = "admin_session=; path=/; max-age=0";
-      }
-      await fetch("/api/admin/logout", { method: "POST" });
-      showToast("Berhasil logout!");
-      setTimeout(() => {
-        router.replace("/admin");
-      }, 300);
-    } catch (err) {
-      console.error("Logout error:", err);
-      router.replace("/admin");
-    }
-  };
+  // === PARTNERS DATA & STATES ===
+  const [partners, setPartners] = useState<PartnerItem[]>([]);
+  const [loadingPartners, setLoadingPartners] = useState(true);
+  const [partnerFilterTab, setPartnerFilterTab] = useState<"all" | "sponsor" | "media_partner">("all");
+  const [partnerSearch, setPartnerSearch] = useState("");
 
-  // === FETCH FUNCTIONS ===
-  const fetchPartners = async () => {
+  // Partner Modal States
+  const [isPartnerModalOpen, setIsPartnerModalOpen] = useState(false);
+  const [editingPartner, setEditingPartner] = useState<PartnerItem | null>(null);
+  const [partnerName, setPartnerName] = useState("");
+  const [partnerType, setPartnerType] = useState<"sponsor" | "media_partner">("sponsor");
+  const [partnerLogoMode, setPartnerLogoMode] = useState<"upload" | "url">("upload");
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [partnerLogoUrl, setPartnerLogoUrl] = useState("");
+  const [previewUrl, setPreviewUrl] = useState("");
+  const [partnerWebsiteUrl, setPartnerWebsiteUrl] = useState("");
+  const [partnerLogoScale, setPartnerLogoScale] = useState(100);
+  const [partnerLogoPositionX, setPartnerLogoPositionX] = useState(50);
+  const [partnerLogoPositionY, setPartnerLogoPositionY] = useState(50);
+  const [submittingPartner, setSubmittingPartner] = useState(false);
+  const [uploading, setUploading] = useState(false);
+
+  // Partner Delete Modal
+  const [deletePartnerTarget, setDeletePartnerTarget] = useState<PartnerItem | null>(null);
+
+  // === TIMELINE DATA & STATES ===
+  const [timelineList, setTimelineList] = useState<TimelineItem[]>([]);
+  const [loadingTimeline, setLoadingTimeline] = useState(true);
+  const [timelineSearch, setTimelineSearch] = useState("");
+
+  // Timeline Modal States
+  const [isTimelineModalOpen, setIsTimelineModalOpen] = useState(false);
+  const [editingTimeline, setEditingTimeline] = useState<TimelineItem | null>(null);
+  const [timelineTitle, setTimelineTitle] = useState("");
+  const [timelineDate, setTimelineDate] = useState("");
+  const [timelineCategory, setTimelineCategory] = useState("REGISTRASI");
+  const [timelineBadgeColor, setTimelineBadgeColor] = useState<"pink" | "cyan" | "yellow">("pink");
+  const [timelineImageUrl, setTimelineImageUrl] = useState("");
+  const [timelineFile, setTimelineFile] = useState<File | null>(null);
+  const [submittingTimeline, setSubmittingTimeline] = useState(false);
+  const [uploadingTimelineFile, setUploadingTimelineFile] = useState(false);
+
+  // Timeline Delete Modal
+  const [deleteTimelineTarget, setDeleteTimelineTarget] = useState<TimelineItem | null>(null);
+
+  // Fetch Partners
+  const fetchPartners = useCallback(async () => {
     setLoadingPartners(true);
     try {
-      const res = await fetch("/api/partners?t=" + Date.now());
-      if (res.ok) {
+      const res = await fetch(apiPath("/partners?includeHidden=true&t=" + Date.now()));
+      const contentType = res.headers.get("content-type") || "";
+      if (res.ok && contentType.includes("application/json")) {
         const data = await res.json();
-        setPartners(data.all || []);
-        setSponsorsCount(data.sponsors?.length || 0);
-        setMediaCount(data.mediaPartners?.length || 0);
+        if (Array.isArray(data)) {
+          setPartners(data);
+        } else if (data && Array.isArray(data.all)) {
+          setPartners(data.all);
+        } else {
+          setPartners([]);
+        }
       } else {
-        showToast("Gagal mengambil data partner", "error");
+        setPartners([]);
+        showToast("Gagal memuat data partner", "error");
       }
     } catch (err) {
-      console.error(err);
-      showToast("Terjadi kesalahan koneksi partner", "error");
+      console.error("Failed to fetch partners:", err);
+      setPartners([]);
+      showToast("Terjadi kesalahan koneksi server", "error");
     } finally {
       setLoadingPartners(false);
     }
-  };
+  }, [showToast]);
 
-  const fetchTimeline = async () => {
+  // Fetch Timeline
+  const fetchTimeline = useCallback(async () => {
     setLoadingTimeline(true);
     try {
-      const res = await fetch("/api/timeline?t=" + Date.now());
-      if (res.ok) {
+      const res = await fetch(apiPath("/timeline?t=" + Date.now()));
+      const contentType = res.headers.get("content-type") || "";
+      if (res.ok && contentType.includes("application/json")) {
         const data = await res.json();
-        setTimelineList(data.timeline || []);
+        if (Array.isArray(data)) {
+          setTimelineList(data);
+        } else if (data && Array.isArray(data.timeline)) {
+          setTimelineList(data.timeline);
+        } else {
+          setTimelineList([]);
+        }
       } else {
-        showToast("Gagal mengambil data timeline", "error");
+        setTimelineList([]);
+        showToast("Gagal memuat data timeline", "error");
       }
     } catch (err) {
-      console.error(err);
-      showToast("Terjadi kesalahan koneksi timeline", "error");
+      console.error("Failed to fetch timeline:", err);
+      setTimelineList([]);
+      showToast("Terjadi kesalahan koneksi server", "error");
     } finally {
       setLoadingTimeline(false);
     }
-  };
+  }, [showToast]);
+
+  useEffect(() => {
+    if (verifyingAuth) return;
+    fetchPartners();
+    fetchTimeline();
+  }, [verifyingAuth, fetchPartners, fetchTimeline]);
+
+  function handleLogout() {
+    if (typeof window !== "undefined") {
+      sessionStorage.removeItem("admin_auth");
+      document.cookie = "admin_session=; path=/; max-age=0";
+    }
+    fetch(apiPath("/admin/logout"), { method: "POST" }).catch(() => {});
+    router.replace("/admin");
+  }
 
   // === PARTNER ACTIONS ===
-  const openAddPartnerModal = () => {
+  const openAddPartnerModal = (defaultType: "sponsor" | "media_partner" = "sponsor") => {
     setEditingPartner(null);
     setPartnerName("");
-    setPartnerType("sponsor");
+    setPartnerType(defaultType);
     setPartnerLogoMode("upload");
-    setPartnerLogoUrl("");
-    setPartnerWebsiteUrl("");
     setSelectedFile(null);
+    setPartnerLogoUrl("");
     setPreviewUrl("");
+    setPartnerWebsiteUrl("");
+    setPartnerLogoScale(100);
+    setPartnerLogoPositionX(50);
+    setPartnerLogoPositionY(50);
     setIsPartnerModalOpen(true);
   };
 
-  const openEditPartnerModal = (item: Partner) => {
+  const openEditPartnerModal = (item: PartnerItem) => {
     setEditingPartner(item);
     setPartnerName(item.name);
     setPartnerType(item.type);
-    setPartnerLogoMode("url");
-    setPartnerLogoUrl(item.logoUrl);
-    setPartnerWebsiteUrl(item.websiteUrl || "");
+    setPartnerLogoMode(isManagedUploadUrl(item.logoUrl) ? "upload" : "url");
     setSelectedFile(null);
-    setPreviewUrl(item.logoUrl);
+    setPartnerLogoUrl(item.logoUrl);
+    setPreviewUrl(withBasePath(item.logoUrl));
+    setPartnerWebsiteUrl(item.websiteUrl || "");
+    setPartnerLogoScale(clampLogoControl(item.logoScale, 100, 55, 180));
+    setPartnerLogoPositionX(clampLogoControl(item.logoPositionX, 50, 0, 100));
+    setPartnerLogoPositionY(clampLogoControl(item.logoPositionY, 50, 0, 100));
     setIsPartnerModalOpen(true);
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      if (!file.type.startsWith("image/")) {
-        showToast("File harus berupa gambar (PNG, SVG, JPG, WEBP)", "error");
+      if (file.size > MAX_UPLOAD_SIZE) {
+        e.target.value = "";
+        setSelectedFile(null);
+        setPreviewUrl(editingPartner ? withBasePath(editingPartner.logoUrl) : "");
+        showToast("Ukuran file maksimal 10 MB", "error");
         return;
       }
       setSelectedFile(file);
-      const url = URL.createObjectURL(file);
-      setPreviewUrl(url);
+      setPreviewUrl(URL.createObjectURL(file));
     }
   };
 
@@ -241,33 +312,35 @@ export default function AdminDashboardPage() {
     }
 
     setSubmittingPartner(true);
-    let finalLogoUrl = partnerLogoUrl || previewUrl || "";
 
     try {
-      if (selectedFile) {
-        setUploading(true);
-        const uploadData = new FormData();
-        uploadData.append("file", selectedFile);
+      let finalLogoUrl = partnerLogoUrl;
 
-        const uploadRes = await fetch("/api/upload", {
+      if (partnerLogoMode === "upload" && selectedFile) {
+        setUploading(true);
+        const formData = new FormData();
+        formData.append("file", selectedFile);
+        formData.append("type", "image");
+
+        const uploadRes = await fetch(apiPath("/upload"), {
           method: "POST",
-          body: uploadData,
+          body: formData,
         });
 
-        const uploadJson = await uploadRes.json();
-        setUploading(false);
-
-        if (!uploadRes.ok || (!uploadJson.url && !uploadJson.apiServedUrl && !uploadJson.publicUrl)) {
-          showToast(uploadJson.error || "Gagal mengunggah gambar logo", "error");
+        const uploadData = await uploadRes.json();
+        if (uploadRes.ok && uploadData.success) {
+          finalLogoUrl = uploadData.apiServedUrl || uploadData.publicUrl;
+        } else {
+          showToast(uploadData.error || "Gagal mengunggah file logo", "error");
           setSubmittingPartner(false);
+          setUploading(false);
           return;
         }
-
-        finalLogoUrl = uploadJson.url || uploadJson.apiServedUrl || uploadJson.publicUrl;
+        setUploading(false);
       }
 
       if (!finalLogoUrl.trim()) {
-        showToast("Logo URL atau file gambar wajib diisi/diunggah!", "error");
+        showToast("Logo partner wajib diunggah atau diisi URL-nya!", "error");
         setSubmittingPartner(false);
         return;
       }
@@ -277,37 +350,41 @@ export default function AdminDashboardPage() {
         logoUrl: finalLogoUrl.trim(),
         type: partnerType,
         websiteUrl: partnerWebsiteUrl.trim(),
+        isVisible: editingPartner ? editingPartner.isVisible ?? true : true,
+        logoScale: partnerLogoScale,
+        logoPositionX: partnerLogoPositionX,
+        logoPositionY: partnerLogoPositionY,
       };
 
       if (editingPartner) {
-        const res = await fetch("/api/partners", {
-          method: "PUT",
+        const res = await fetch(apiPath("/partners"), {
+          method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ id: editingPartner.id, ...payload }),
+          body: JSON.stringify({ action: "update", id: editingPartner.id, previousType: editingPartner.type, ...payload }),
         });
 
         if (res.ok) {
-          showToast(`Berhasil memperbarui "${partnerName}"!`);
+          showToast(`Berhasil memperbarui ${partnerType === "sponsor" ? "Sponsor" : "Media Partner"} "${partnerName}"!`);
           setIsPartnerModalOpen(false);
           fetchPartners();
         } else {
-          const errData = await res.json();
-          showToast(errData.error || "Gagal mengedit partner", "error");
+          const errData = await res.json().catch(() => ({}));
+          showToast(errData.error || "Gagal mengedit data partner", "error");
         }
       } else {
-        const res = await fetch("/api/partners", {
+        const res = await fetch(apiPath("/partners"), {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload),
         });
 
         if (res.ok) {
-          showToast(`Berhasil menambahkan "${partnerName}"!`);
+          showToast(`Berhasil menambahkan ${partnerType === "sponsor" ? "Sponsor" : "Media Partner"} "${partnerName}"!`);
           setIsPartnerModalOpen(false);
           fetchPartners();
         } else {
-          const errData = await res.json();
-          showToast(errData.error || "Gagal menambahkan partner", "error");
+          const errData = await res.json().catch(() => ({}));
+          showToast(errData.error || "Gagal menambahkan data partner", "error");
         }
       }
     } catch (err) {
@@ -318,25 +395,89 @@ export default function AdminDashboardPage() {
     }
   };
 
-  const handlePartnerDelete = async () => {
-    if (!deletePartnerTarget) return;
+  const handlePartnerVisibilityToggle = async (item: PartnerItem) => {
+    const nextVisibility = !(item.isVisible ?? true);
+
+    setPartners((prev) =>
+      prev.map((p) =>
+        p.id === item.id && p.type === item.type
+          ? { ...p, isVisible: nextVisibility }
+          : p
+      )
+    );
 
     try {
-      const res = await fetch(`/api/partners?id=${deletePartnerTarget.id}`, {
-        method: "DELETE",
+      const res = await fetch(apiPath("/partners"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "update",
+          id: item.id,
+          type: item.type,
+          name: item.name,
+          logoUrl: item.logoUrl,
+          websiteUrl: item.websiteUrl,
+          isVisible: nextVisibility,
+          logoScale: item.logoScale ?? 100,
+          logoPositionX: item.logoPositionX ?? 50,
+          logoPositionY: item.logoPositionY ?? 50,
+        }),
       });
 
       if (res.ok) {
-        showToast(`Partner "${deletePartnerTarget.name}" berhasil dihapus.`);
-        setDeletePartnerTarget(null);
-        fetchPartners();
+        showToast(
+          `${item.type === "sponsor" ? "Sponsor" : "Media Partner"} "${item.name}" sekarang ${
+            nextVisibility ? "TAMPIL DI BERANDA HOME" : "DISEMBUNYIKAN DARI BERANDA HOME"
+          }.`
+        );
       } else {
-        const errData = await res.json();
-        showToast(errData.error || "Gagal menghapus partner", "error");
+        // Revert optimistic update on failure
+        setPartners((prev) =>
+          prev.map((p) =>
+            p.id === item.id && p.type === item.type
+              ? { ...p, isVisible: !nextVisibility }
+              : p
+          )
+        );
+        const errData = await res.json().catch(() => ({}));
+        showToast(errData.error || "Gagal memperbarui visibilitas partner", "error");
       }
     } catch (err) {
       console.error(err);
-      showToast("Terjadi kesalahan saat menghapus data partner", "error");
+      // Revert optimistic update on error
+      setPartners((prev) =>
+        prev.map((p) =>
+          p.id === item.id && p.type === item.type
+            ? { ...p, isVisible: !nextVisibility }
+            : p
+        )
+      );
+      showToast("Terjadi kesalahan saat memperbarui visibilitas partner", "error");
+    }
+  };
+
+  const handlePartnerDelete = async () => {
+    if (!deletePartnerTarget) return;
+
+    const target = deletePartnerTarget;
+    setDeletePartnerTarget(null);
+
+    setPartners((prev) => prev.filter((p) => !(p.id === target.id && p.type === target.type)));
+
+    try {
+      const res = await fetch(apiPath("/partners"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "delete", id: target.id, type: target.type }),
+      });
+
+      if (res.ok) {
+        showToast(`${target.type === "sponsor" ? "Sponsor" : "Media Partner"} "${target.name}" berhasil dihapus.`);
+      }
+      fetchPartners();
+    } catch (err) {
+      console.error(err);
+      fetchPartners();
     }
   };
 
@@ -347,6 +488,8 @@ export default function AdminDashboardPage() {
     setTimelineDate("");
     setTimelineCategory("REGISTRASI");
     setTimelineBadgeColor("pink");
+    setTimelineImageUrl("");
+    setTimelineFile(null);
     setIsTimelineModalOpen(true);
   };
 
@@ -356,6 +499,8 @@ export default function AdminDashboardPage() {
     setTimelineDate(item.date);
     setTimelineCategory(item.category || "AGENDAR");
     setTimelineBadgeColor(item.badgeColor || "pink");
+    setTimelineImageUrl(item.imageUrl || "");
+    setTimelineFile(null);
     setIsTimelineModalOpen(true);
   };
 
@@ -369,18 +514,43 @@ export default function AdminDashboardPage() {
     setSubmittingTimeline(true);
 
     try {
+      let finalImageUrl = timelineImageUrl;
+      if (timelineFile) {
+        setUploadingTimelineFile(true);
+        const formData = new FormData();
+        formData.append("file", timelineFile);
+        formData.append("type", "image");
+
+        const uploadRes = await fetch(apiPath("/upload"), {
+          method: "POST",
+          body: formData,
+        });
+
+        const uploadData = await uploadRes.json();
+        if (uploadRes.ok && uploadData.success) {
+          finalImageUrl = uploadData.apiServedUrl || uploadData.publicUrl;
+        } else {
+          showToast(uploadData.error || "Gagal mengunggah gambar agenda", "error");
+          setSubmittingTimeline(false);
+          setUploadingTimelineFile(false);
+          return;
+        }
+        setUploadingTimelineFile(false);
+      }
+
       const payload = {
         title: timelineTitle.trim(),
         date: timelineDate.trim(),
         category: timelineCategory.trim(),
         badgeColor: timelineBadgeColor,
+        imageUrl: finalImageUrl,
       };
 
       if (editingTimeline) {
-        const res = await fetch("/api/timeline", {
-          method: "PUT",
+        const res = await fetch(apiPath("/timeline"), {
+          method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ id: editingTimeline.id, ...payload }),
+          body: JSON.stringify({ id: editingTimeline.id, action: "update", ...payload }),
         });
 
         if (res.ok) {
@@ -388,11 +558,11 @@ export default function AdminDashboardPage() {
           setIsTimelineModalOpen(false);
           fetchTimeline();
         } else {
-          const errData = await res.json();
+          const errData = await res.json().catch(() => ({}));
           showToast(errData.error || "Gagal mengedit acara timeline", "error");
         }
       } else {
-        const res = await fetch("/api/timeline", {
+        const res = await fetch(apiPath("/timeline"), {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload),
@@ -403,7 +573,7 @@ export default function AdminDashboardPage() {
           setIsTimelineModalOpen(false);
           fetchTimeline();
         } else {
-          const errData = await res.json();
+          const errData = await res.json().catch(() => ({}));
           showToast(errData.error || "Gagal menambahkan acara timeline", "error");
         }
       }
@@ -412,43 +582,52 @@ export default function AdminDashboardPage() {
       showToast("Terjadi kesalahan saat menyimpan acara timeline", "error");
     } finally {
       setSubmittingTimeline(false);
+      setIsTimelineModalOpen(false);
     }
   };
 
   const handleTimelineDelete = async () => {
     if (!deleteTimelineTarget) return;
 
+    const target = deleteTimelineTarget;
+    setDeleteTimelineTarget(null);
+    setTimelineList((prev) => prev.filter((t) => t.id !== target.id));
+
     try {
-      const res = await fetch(`/api/timeline?id=${deleteTimelineTarget.id}`, {
-        method: "DELETE",
+      const res = await fetch(apiPath("/timeline"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "delete", id: target.id }),
       });
 
       if (res.ok) {
         showToast("Acara timeline berhasil dihapus.");
-        setDeleteTimelineTarget(null);
-        fetchTimeline();
-      } else {
-        const errData = await res.json();
-        showToast(errData.error || "Gagal menghapus acara timeline", "error");
       }
+      fetchTimeline();
     } catch (err) {
       console.error(err);
-      showToast("Terjadi kesalahan saat menghapus acara timeline", "error");
+      fetchTimeline();
     }
   };
 
   // Filter lists
-  const filteredPartners = partners.filter((p) => {
+  const safePartners = Array.isArray(partners) ? partners : [];
+  const safeTimeline = Array.isArray(timelineList) ? timelineList : [];
+
+  const filteredPartners = safePartners.filter((p) => {
     const matchesTab = partnerFilterTab === "all" || p.type === partnerFilterTab;
     const matchesSearch = p.name.toLowerCase().includes(partnerSearch.toLowerCase());
     return matchesTab && matchesSearch;
   });
 
-  const filteredTimeline = timelineList.filter((item) =>
+  const filteredTimeline = safeTimeline.filter((item) =>
     item.title.toLowerCase().includes(timelineSearch.toLowerCase()) ||
     item.date.toLowerCase().includes(timelineSearch.toLowerCase()) ||
     (item.category && item.category.toLowerCase().includes(timelineSearch.toLowerCase()))
   );
+
+  const sponsorsCount = safePartners.filter((p) => p.type === "sponsor").length;
+  const mediaCount = safePartners.filter((p) => p.type === "media_partner").length;
 
   if (verifyingAuth) {
     return (
@@ -461,7 +640,7 @@ export default function AdminDashboardPage() {
 
   return (
     <div className="min-h-screen bg-navy-900 text-cream font-sans relative overflow-x-hidden selection:bg-pink selection:text-ink pb-20">
-      {/* RETRO FLOATING OVERLAY & GLOW BACKGROUND */}
+      {/* RETRO OVERLAY & GLOW BACKGROUND */}
       <div className="absolute inset-0 bg-[linear-gradient(rgba(245,241,224,0.04)_1px,transparent_1px),linear-gradient(90deg,rgba(245,241,224,0.04)_1px,transparent_1px)] bg-[size:36px_36px] pointer-events-none" />
       <div className="absolute top-10 left-10 w-96 h-96 bg-pink/10 rounded-full blur-[140px] -z-10 pointer-events-none animate-pulse" />
       <div className="absolute bottom-10 right-10 w-96 h-96 bg-cyan/10 rounded-full blur-[140px] -z-10 pointer-events-none animate-pulse" />
@@ -470,7 +649,7 @@ export default function AdminDashboardPage() {
       <div className="absolute top-20 left-6 w-6 h-6 bg-pink border-2 border-ink rotate-12 animate-float hidden md:block" />
       <div className="absolute top-1/3 right-8 w-7 h-7 bg-cyan border-2 border-ink -rotate-12 animate-float hidden md:block" style={{ animationDelay: "1.2s" }} />
 
-      {/* INDEPENDENT ADMIN HEADER (No Public Site Navbar/Footer) */}
+      {/* INDEPENDENT ADMIN HEADER */}
       <header className="border-b-3 border-ink bg-navy-800/95 sticky top-0 z-40 backdrop-blur-md shadow-hard">
         <div className="max-w-7xl mx-auto px-4 md:px-8 py-3.5 flex flex-wrap items-center justify-between gap-4">
           <div className="flex items-center gap-3">
@@ -483,7 +662,7 @@ export default function AdminDashboardPage() {
             </Link>
             <div className="flex items-center gap-2.5">
               <div className="w-9 h-9 relative shrink-0">
-                <Image src="/logos/logo_navbar.png" alt="Logo" width={36} height={36} className="object-contain" />
+                <Image src={withBasePath("/logos/logo_navbar.png")} alt="Logo" width={36} height={36} style={{ width: "auto", height: "auto" }} className="object-contain" />
               </div>
               <div>
                 <span className="font-pixel text-yellow text-xs md:text-sm tracking-wider block">
@@ -535,7 +714,7 @@ export default function AdminDashboardPage() {
 
       <main className="max-w-7xl mx-auto px-4 md:px-8 pt-8 space-y-8 relative z-10">
         {/* MAIN DASHBOARD SWITCHER TABS */}
-        <div className="flex items-center gap-3 border-b-3 border-ink pb-4">
+        <div className="flex flex-wrap items-center gap-3 border-b-3 border-ink pb-4">
           <button
             onClick={() => setMainTab("partners")}
             className={`px-5 py-3 border-3 border-ink font-pixel text-xs md:text-sm tracking-wider flex items-center gap-2.5 transition-all cursor-pointer ${
@@ -556,8 +735,22 @@ export default function AdminDashboardPage() {
             }`}
           >
             <Calendar size={18} />
-            <span>2. TIMELINE AGENDA ACARA ({timelineList.length})</span>
+            <span>2. TIMELINE AGENDA ({safeTimeline.length})</span>
           </button>
+          <Link
+            href="/admin/events"
+            className="px-5 py-3 border-3 border-ink font-pixel text-xs md:text-sm tracking-wider flex items-center gap-2.5 transition-all cursor-pointer bg-navy-800 text-cream/70 hover:bg-navy-700"
+          >
+            <Sparkles size={18} />
+            <span>3. KELOLA LINK DAFTAR & MASKOT CARD &gt;</span>
+          </Link>
+          <Link
+            href="/admin/speakers"
+            className="px-5 py-3 border-3 border-ink font-pixel text-xs md:text-sm tracking-wider flex items-center gap-2.5 transition-all cursor-pointer bg-navy-800 text-cream/70 hover:bg-navy-700"
+          >
+            <Mic size={18} />
+            <span>4. KELOLA PEMATERI & CV PDF &gt;</span>
+          </Link>
         </div>
 
         {/* ========================================================= */}
@@ -578,13 +771,22 @@ export default function AdminDashboardPage() {
                   Tambah dan edit logo sponsor serta media partner. Foto yang diunggah langsung tampil di marquee beranda secara otomatis.
                 </p>
               </div>
-              <button
-                onClick={openAddPartnerModal}
-                className="press-btn border-3 border-ink shadow-hard bg-yellow text-ink font-pixel text-xs md:text-sm px-5 py-3.5 flex items-center gap-2 hover:bg-yellow-dim transition-all uppercase tracking-wider font-extrabold cursor-pointer"
-              >
-                <Plus size={18} strokeWidth={3} />
-                <span>Tambah Partner Baru</span>
-              </button>
+              <div className="flex flex-wrap items-center gap-3">
+                <button
+                  onClick={() => openAddPartnerModal("sponsor")}
+                  className="press-btn border-3 border-ink shadow-hard bg-pink text-ink font-pixel text-xs px-4 py-3 flex items-center gap-2 hover:bg-pink/90 transition-all uppercase tracking-wider font-extrabold cursor-pointer"
+                >
+                  <Plus size={16} strokeWidth={3} />
+                  <span>+ Tambah Sponsor</span>
+                </button>
+                <button
+                  onClick={() => openAddPartnerModal("media_partner")}
+                  className="press-btn border-3 border-ink shadow-hard bg-cyan text-ink font-pixel text-xs px-4 py-3 flex items-center gap-2 hover:bg-cyan/90 transition-all uppercase tracking-wider font-extrabold cursor-pointer"
+                >
+                  <Plus size={16} strokeWidth={3} />
+                  <span>+ Tambah Medpart</span>
+                </button>
+              </div>
             </div>
 
             {/* Stats Cards */}
@@ -593,7 +795,7 @@ export default function AdminDashboardPage() {
                 <span className="font-pixel text-[10px] text-cream/60 tracking-wider block uppercase mb-1">
                   TOTAL PARTNERS
                 </span>
-                <div className="font-pixel text-yellow text-3xl font-bold">{partners.length}</div>
+                <div className="font-pixel text-yellow text-3xl font-bold">{safePartners.length}</div>
               </div>
               <div className="bg-navy-800 border-3 border-ink shadow-hard p-5">
                 <span className="font-pixel text-[10px] text-pink tracking-wider block uppercase mb-1">
@@ -618,7 +820,7 @@ export default function AdminDashboardPage() {
                     partnerFilterTab === "all" ? "bg-yellow text-ink font-bold" : "bg-navy-700 text-cream/80"
                   }`}
                 >
-                  SEMUA ({partners.length})
+                  SEMUA ({safePartners.length})
                 </button>
                 <button
                   onClick={() => setPartnerFilterTab("sponsor")}
@@ -670,18 +872,20 @@ export default function AdminDashboardPage() {
                 <div className="text-4xl">🔍</div>
                 <h3 className="font-pixel text-yellow text-sm">TIDAK ADA PARTNER DITEMUKAN</h3>
                 <button
-                  onClick={openAddPartnerModal}
+                  onClick={() => openAddPartnerModal("sponsor")}
                   className="press-btn border-2 border-ink shadow-hard-sm bg-pink text-ink font-bold text-xs px-4 py-2 inline-flex items-center gap-1.5"
                 >
-                  <Plus size={14} /> Tambah Partner Baru
+                  <Plus size={14} /> Tambah Sponsor Baru
                 </button>
               </div>
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
                 {filteredPartners.map((item) => (
                   <div
-                    key={item.id}
-                    className="bg-navy-800 border-3 border-ink shadow-hard p-4 flex flex-col justify-between relative group hover:border-yellow transition-all duration-200"
+                    key={`${item.type}-${item.id}`}
+                    className={`bg-navy-800 border-3 shadow-hard p-4 flex flex-col justify-between relative group transition-all duration-200 ${
+                      item.isVisible === false ? "border-pink/70 opacity-70" : "border-ink hover:border-yellow"
+                    }`}
                   >
                     <div>
                       <div className="flex items-center justify-between gap-2 mb-3">
@@ -692,18 +896,34 @@ export default function AdminDashboardPage() {
                         >
                           {item.type === "sponsor" ? "SPONSOR" : "MEDIA PARTNER"}
                         </span>
-                        <span className="text-[10px] font-mono text-cream/40">#{item.id}</span>
+                        <div className="flex items-center gap-2">
+                          {item.isVisible !== false ? (
+                            <span className="text-[9px] font-pixel px-2 py-0.5 border border-cyan bg-cyan/20 text-cyan tracking-wider">
+                              TAMPIL
+                            </span>
+                          ) : (
+                            <span className="text-[9px] font-pixel px-2 py-0.5 border border-pink bg-pink/20 text-pink tracking-wider">
+                              HIDDEN
+                            </span>
+                          )}
+                          <span className="text-[10px] font-mono text-cream/40">#{item.id}</span>
+                        </div>
                       </div>
 
                       {/* Logo Display Box */}
-                      <div className="w-full h-24 bg-navy-900 border-2 border-ink/80 p-3 flex items-center justify-center relative overflow-hidden mb-3 group-hover:bg-navy-900/80 transition-colors">
+                      <div className="w-full h-24 bg-gradient-to-br from-yellow via-yellow-dim to-pink/35 border-2 border-ink/80 p-3 flex items-center justify-center relative overflow-hidden mb-3 transition-colors">
+                        <div className="absolute inset-0 bg-gradient-to-r from-yellow/35 via-pink/10 to-cyan/20 opacity-80" />
+                        <div className="absolute inset-x-2 top-1 h-1 bg-cream/60" />
+                        <div className="absolute -left-6 top-1/2 h-20 w-20 -translate-y-1/2 rounded-full bg-cream/35 blur-xl" />
+                        <div className="absolute -right-8 bottom-0 h-24 w-24 rounded-full bg-ink/10 blur-xl" />
                         {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img
-                          src={item.logoUrl}
+                          src={withBasePath(item.logoUrl)}
                           alt={item.name}
-                          className="max-h-16 max-w-full object-contain filter group-hover:scale-105 transition-transform duration-300"
+                          className="relative object-contain filter group-hover:scale-105 transition-transform duration-300"
+                          style={partnerLogoStyle(item)}
                           onError={(e) => {
-                            (e.target as HTMLImageElement).src = "/logos/logo_navbar.png";
+                            (e.target as HTMLImageElement).src = withBasePath("/logos/logo_navbar.png");
                           }}
                         />
                       </div>
@@ -714,12 +934,12 @@ export default function AdminDashboardPage() {
 
                       {item.websiteUrl ? (
                         <a
-                          href={item.websiteUrl}
+                          href={normalizePartnerWebsiteUrl(item.websiteUrl)}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="text-[11px] font-mono text-cyan hover:underline inline-flex items-center gap-1 line-clamp-1"
                         >
-                          <span>{item.websiteUrl.replace(/^https?:\/\//, "")}</span>
+                          <span>{formatPartnerWebsiteLabel(normalizePartnerWebsiteUrl(item.websiteUrl))}</span>
                           <ExternalLink size={10} />
                         </a>
                       ) : (
@@ -728,6 +948,17 @@ export default function AdminDashboardPage() {
                     </div>
 
                     <div className="flex items-center gap-2 pt-4 mt-3 border-t border-ink/40">
+                      <button
+                        onClick={() => handlePartnerVisibilityToggle(item)}
+                        className={`px-2.5 py-1.5 border-2 border-ink text-xs font-mono font-bold flex items-center justify-center gap-1 transition-colors cursor-pointer ${
+                          item.isVisible !== false
+                            ? "bg-navy-700 text-yellow hover:bg-yellow hover:text-ink"
+                            : "bg-navy-700 text-cream/40 hover:bg-pink hover:text-ink"
+                        }`}
+                        title={item.isVisible !== false ? "Logo TAMPIL di Beranda. Klik untuk sembunyikan." : "Logo DISEMBUNYIKAN dari Beranda. Klik untuk tampilkan."}
+                      >
+                        {item.isVisible !== false ? <Eye size={13} /> : <EyeOff size={13} />}
+                      </button>
                       <button
                         onClick={() => openEditPartnerModal(item)}
                         className="flex-1 py-1.5 px-2 bg-navy-700 border-2 border-ink hover:bg-yellow hover:text-ink text-cream text-xs font-mono font-bold flex items-center justify-center gap-1 transition-colors cursor-pointer"
@@ -780,7 +1011,7 @@ export default function AdminDashboardPage() {
             {/* Search Toolbar */}
             <div className="bg-navy-800/80 border-3 border-ink shadow-hard p-4 flex flex-col md:flex-row items-center justify-between gap-4">
               <div className="text-xs font-mono text-cream/80 font-bold">
-                TOTAL AGENDA ACARA: <span className="text-yellow">{timelineList.length} ACARA</span>
+                TOTAL AGENDA ACARA: <span className="text-yellow">{safeTimeline.length} ACARA</span>
               </div>
 
               <div className="flex items-center gap-3 w-full md:w-auto">
@@ -833,7 +1064,7 @@ export default function AdminDashboardPage() {
 
                   return (
                     <div
-                      key={item.id}
+                      key={`timeline-${item.id}-${index}`}
                       className="bg-navy-800 border-3 border-ink shadow-hard p-4 md:p-5 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 group hover:border-yellow transition-all"
                     >
                       <div className="flex items-start gap-4">
@@ -928,7 +1159,7 @@ export default function AdminDashboardPage() {
                       partnerType === "sponsor" ? "bg-pink text-ink font-bold shadow-hard-sm" : "bg-navy-700 text-cream/70"
                     }`}
                   >
-                    <span>SPONSOR</span>
+                    <span>Sponsor</span>
                   </button>
                   <button
                     type="button"
@@ -937,117 +1168,151 @@ export default function AdminDashboardPage() {
                       partnerType === "media_partner" ? "bg-cyan text-ink font-bold shadow-hard-sm" : "bg-navy-700 text-cream/70"
                     }`}
                   >
-                    <span>MEDIA PARTNER</span>
+                    <span>Media Partner</span>
                   </button>
                 </div>
               </div>
 
               <div>
-                <label className="font-pixel text-[10px] text-cream/80 block uppercase mb-1">
-                  Nama Partner / Instansi <span className="text-pink">*</span>
+                <label className="font-pixel text-[10px] text-cream/80 block uppercase mb-1.5">
+                  Nama Partner / Perusahaan <span className="text-pink">*</span>
                 </label>
                 <input
                   type="text"
                   required
-                  placeholder="Contoh: Bank BRI / HIMA IF"
+                  placeholder="Contoh: Syneps Academy"
                   value={partnerName}
                   onChange={(e) => setPartnerName(e.target.value)}
-                  className="w-full px-3.5 py-2 bg-navy-900 border-2 border-ink text-xs font-mono text-cream focus:outline-none focus:border-yellow"
+                  className="w-full px-3.5 py-2.5 bg-navy-900 border-2 border-ink text-xs font-mono text-cream focus:outline-none focus:border-yellow"
                 />
               </div>
 
               <div>
-                <div className="flex items-center justify-between mb-1.5">
-                  <label className="font-pixel text-[10px] text-cream/80 uppercase">
-                    Logo Gambar <span className="text-pink">*</span>
-                  </label>
-                  <div className="flex items-center gap-3 text-xs font-mono">
-                    <label className="flex items-center gap-1.5 cursor-pointer text-cream/80">
-                      <input
-                        type="radio"
-                        name="logoMode"
-                        checked={partnerLogoMode === "upload"}
-                        onChange={() => setPartnerLogoMode("upload")}
-                        className="accent-yellow"
-                      />
-                      <span>Upload File</span>
-                    </label>
-                    <label className="flex items-center gap-1.5 cursor-pointer text-cream/80">
-                      <input
-                        type="radio"
-                        name="logoMode"
-                        checked={partnerLogoMode === "url"}
-                        onChange={() => setPartnerLogoMode("url")}
-                        className="accent-yellow"
-                      />
-                      <span>URL Gambar</span>
-                    </label>
-                  </div>
+                <label className="font-pixel text-[10px] text-cream/80 block uppercase mb-1.5">
+                  Metode Logo <span className="text-pink">*</span>
+                </label>
+                <div className="grid grid-cols-2 gap-3 mb-3">
+                  <button
+                    type="button"
+                    onClick={() => setPartnerLogoMode("upload")}
+                    className={`py-2 px-3 border-2 border-ink text-xs font-mono font-bold flex items-center justify-center gap-2 cursor-pointer transition-all ${
+                      partnerLogoMode === "upload" ? "bg-yellow text-ink" : "bg-navy-700 text-cream/70"
+                    }`}
+                  >
+                    Upload File
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPartnerLogoMode("url")}
+                    className={`py-2 px-3 border-2 border-ink text-xs font-mono font-bold flex items-center justify-center gap-2 cursor-pointer transition-all ${
+                      partnerLogoMode === "url" ? "bg-yellow text-ink" : "bg-navy-700 text-cream/70"
+                    }`}
+                  >
+                    URL Gambar
+                  </button>
                 </div>
 
                 {partnerLogoMode === "upload" ? (
-                  <div className="border-2 border-dashed border-ink/80 bg-navy-900 p-4 text-center hover:border-yellow transition-colors">
+                  <div>
                     <input
                       type="file"
                       accept="image/*"
-                      id="logoFileInput"
                       onChange={handleFileChange}
-                      className="hidden"
+                      className="w-full text-xs font-mono text-cream/70 file:mr-3 file:py-2 file:px-4 file:border-2 file:border-ink file:bg-yellow file:text-ink file:font-bold hover:file:bg-yellow-dim cursor-pointer"
                     />
-                    <label htmlFor="logoFileInput" className="cursor-pointer block space-y-2">
-                      <Upload className="mx-auto text-yellow" size={24} />
-                      <div className="text-xs font-mono text-cream/80">
-                        {selectedFile ? (
-                          <span className="text-yellow font-bold">{selectedFile.name}</span>
-                        ) : (
-                          "Klik di sini untuk memilih file logo (PNG, SVG, JPG, WEBP)"
-                        )}
-                      </div>
-                      <span className="text-[10px] text-cream/50 block">Maksimal 5MB</span>
-                    </label>
+                    <p className="mt-1.5 text-[10px] text-yellow font-mono">
+                      Batas upload logo maksimal 10 MB.
+                    </p>
                   </div>
                 ) : (
-                  <div className="relative">
-                    <ImageIcon className="absolute left-3 top-1/2 -translate-y-1/2 text-cream/50" size={16} />
+                  <div>
                     <input
                       type="text"
-                      placeholder="https://... atau /logos/sponsors/nama.svg"
+                      placeholder="logos/sponsors/logo.png atau https://..."
                       value={partnerLogoUrl}
                       onChange={(e) => {
                         setPartnerLogoUrl(e.target.value);
-                        setPreviewUrl(e.target.value);
+                        setPreviewUrl(withBasePath(e.target.value));
                       }}
-                      className="w-full pl-9 pr-3 py-2 bg-navy-900 border-2 border-ink text-xs font-mono text-cream focus:outline-none focus:border-yellow"
+                      className="w-full px-3.5 py-2.5 bg-navy-900 border-2 border-ink text-xs font-mono text-cream focus:outline-none focus:border-yellow"
                     />
                   </div>
                 )}
-              </div>
 
-              {previewUrl && (
-                <div>
-                  <span className="text-[10px] font-mono text-cream/60 block mb-1">PREVIEW LOGO:</span>
-                  <div className="w-full h-24 bg-navy-900 border-2 border-ink/80 p-2 flex items-center justify-center relative">
+                {previewUrl && (
+                  <div className="mt-3 p-3 bg-gradient-to-br from-yellow via-yellow-dim to-pink/35 border-2 border-ink flex items-center justify-center h-28 relative overflow-hidden">
+                    <div className="absolute inset-0 bg-gradient-to-r from-yellow/35 via-pink/10 to-cyan/20 opacity-80" />
+                    <div className="absolute inset-x-2 top-1 h-1 bg-cream/60" />
+                    <div className="absolute -left-6 top-1/2 h-20 w-20 -translate-y-1/2 rounded-full bg-cream/35 blur-xl" />
+                    <div className="absolute -right-8 bottom-0 h-24 w-24 rounded-full bg-ink/10 blur-xl" />
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
                       src={previewUrl}
                       alt="Preview"
-                      className="max-h-20 max-w-full object-contain"
-                      onError={() => showToast("Gagal memuat preview gambar", "error")}
+                      className="relative object-contain"
+                      style={partnerLogoStyle({
+                        logoScale: partnerLogoScale,
+                        logoPositionX: partnerLogoPositionX,
+                        logoPositionY: partnerLogoPositionY,
+                      })}
+                      onError={() => showToast("Gagal memuat pratinjau gambar", "error")}
                     />
                   </div>
+                )}
+
+                <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <label className="block">
+                    <span className="font-pixel text-[9px] text-cream/70 block uppercase mb-1">
+                      Ukuran {partnerLogoScale}%
+                    </span>
+                    <input
+                      type="range"
+                      min={55}
+                      max={180}
+                      value={partnerLogoScale}
+                      onChange={(e) => setPartnerLogoScale(Number(e.target.value))}
+                      className="w-full accent-yellow"
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="font-pixel text-[9px] text-cream/70 block uppercase mb-1">
+                      Posisi X {partnerLogoPositionX}%
+                    </span>
+                    <input
+                      type="range"
+                      min={0}
+                      max={100}
+                      value={partnerLogoPositionX}
+                      onChange={(e) => setPartnerLogoPositionX(Number(e.target.value))}
+                      className="w-full accent-cyan"
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="font-pixel text-[9px] text-cream/70 block uppercase mb-1">
+                      Posisi Y {partnerLogoPositionY}%
+                    </span>
+                    <input
+                      type="range"
+                      min={0}
+                      max={100}
+                      value={partnerLogoPositionY}
+                      onChange={(e) => setPartnerLogoPositionY(Number(e.target.value))}
+                      className="w-full accent-pink"
+                    />
+                  </label>
                 </div>
-              )}
+              </div>
 
               <div>
-                <label className="font-pixel text-[10px] text-cream/80 block uppercase mb-1">
+                <label className="font-pixel text-[10px] text-cream/80 block uppercase mb-1.5">
                   Website URL (Opsional)
                 </label>
                 <input
-                  type="url"
-                  placeholder="https://instagram.com/..."
+                  type="text"
+                  placeholder="https://..."
                   value={partnerWebsiteUrl}
                   onChange={(e) => setPartnerWebsiteUrl(e.target.value)}
-                  className="w-full px-3.5 py-2 bg-navy-900 border-2 border-ink text-xs font-mono text-cream focus:outline-none focus:border-yellow"
+                  className="w-full px-3.5 py-2.5 bg-navy-900 border-2 border-ink text-xs font-mono text-cream focus:outline-none focus:border-yellow"
                 />
               </div>
 
@@ -1055,17 +1320,23 @@ export default function AdminDashboardPage() {
                 <button
                   type="button"
                   onClick={() => setIsPartnerModalOpen(false)}
-                  className="px-4 py-2 bg-navy-700 border-2 border-ink text-cream text-xs font-pixel tracking-wider hover:bg-navy-700/80 transition-colors cursor-pointer"
+                  className="px-4 py-2 border-2 border-ink bg-navy-700 text-cream/80 font-mono text-xs font-bold hover:bg-navy-600 cursor-pointer"
                 >
-                  BATAL
+                  Batal
                 </button>
                 <button
                   type="submit"
                   disabled={submittingPartner || uploading}
-                  className="press-btn px-5 py-2 bg-yellow text-ink border-2 border-ink shadow-hard-sm text-xs font-pixel tracking-wider font-bold hover:bg-yellow-dim transition-all disabled:opacity-50 cursor-pointer flex items-center gap-2"
+                  className="press-btn px-5 py-2 border-2 border-ink shadow-hard-sm bg-yellow text-ink font-mono text-xs font-bold flex items-center gap-2 hover:bg-yellow-dim cursor-pointer"
                 >
-                  {(submittingPartner || uploading) && <RefreshCw size={14} className="animate-spin" />}
-                  <span>{editingPartner ? "SIMPAN PERUBAHAN" : "TAMBAHKAN PARTNER"}</span>
+                  {submittingPartner || uploading ? (
+                    <>
+                      <RefreshCw size={14} className="animate-spin" />
+                      <span>Menyimpan...</span>
+                    </>
+                  ) : (
+                    <span>{editingPartner ? "Simpan Perubahan" : "Tambah Partner"}</span>
+                  )}
                 </button>
               </div>
             </form>
@@ -1073,29 +1344,32 @@ export default function AdminDashboardPage() {
         </div>
       )}
 
-      {/* DELETE PARTNER CONFIRMATION MODAL */}
+      {/* ========================================================= */}
+      {/* MODAL DELETE PARTNER */}
+      {/* ========================================================= */}
       {deletePartnerTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-navy-900/80 backdrop-blur-sm animate-fade-up">
           <div className="bg-navy-800 border-3 border-ink shadow-hard-lg w-full max-w-md p-6 text-center space-y-4 relative">
-            <div className="w-12 h-12 bg-pink/20 border-2 border-pink text-pink rounded-full flex items-center justify-center mx-auto text-xl">
-              ⚠️
+            <div className="w-12 h-12 bg-pink/20 border-2 border-ink rounded-full flex items-center justify-center mx-auto text-pink">
+              <Trash2 size={24} />
             </div>
-            <h3 className="font-pixel text-cream text-base">KONFIRMASI HAPUS PARTNER</h3>
-            <p className="text-xs font-sans text-cream/80">
-              Apakah kamu yakin ingin menghapus partner <strong className="text-yellow">{deletePartnerTarget.name}</strong>?
+            <h3 className="font-pixel text-cream text-sm">HAPUS PARTNER?</h3>
+            <p className="text-xs font-sans text-cream/70">
+              Apakah Anda yakin ingin menghapus {deletePartnerTarget.type === "sponsor" ? "Sponsor" : "Media Partner"}{" "}
+              <strong className="text-yellow">{deletePartnerTarget.name}</strong>?
             </p>
             <div className="flex items-center justify-center gap-3 pt-2">
               <button
                 onClick={() => setDeletePartnerTarget(null)}
-                className="px-4 py-2 bg-navy-700 border-2 border-ink text-cream text-xs font-pixel tracking-wider hover:bg-navy-700/80 transition-colors cursor-pointer"
+                className="px-4 py-2 border-2 border-ink bg-navy-700 text-cream/80 font-mono text-xs font-bold hover:bg-navy-600 cursor-pointer"
               >
-                BATAL
+                Batal
               </button>
               <button
                 onClick={handlePartnerDelete}
-                className="press-btn px-5 py-2 bg-pink text-cream border-2 border-ink shadow-hard-sm text-xs font-pixel tracking-wider font-bold hover:bg-pink/90 transition-all cursor-pointer"
+                className="press-btn px-5 py-2 border-2 border-ink shadow-hard-sm bg-pink text-cream font-mono text-xs font-bold hover:bg-pink/90 cursor-pointer"
               >
-                YA, HAPUS
+                Ya, Hapus
               </button>
             </div>
           </div>
@@ -1108,16 +1382,13 @@ export default function AdminDashboardPage() {
       {isTimelineModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-navy-900/80 backdrop-blur-sm animate-fade-up">
           <div className="bg-navy-800 border-3 border-ink shadow-hard-lg w-full max-w-lg p-6 relative">
-            <div className="absolute -top-2 -left-2 w-4 h-4 bg-cyan border-2 border-ink rotate-12" />
-            <div className="absolute -bottom-2 -right-2 w-4 h-4 bg-pink border-2 border-ink -rotate-12" />
-
             <div className="flex items-center justify-between border-b-2 border-ink pb-4 mb-5">
               <div>
                 <span className="font-pixel text-[10px] text-cyan tracking-widest uppercase block mb-0.5">
-                  ◆ {editingTimeline ? "PERBAARUI AGENDA ACARA" : "TAMBAH AGENDA ACARA BARU"}
+                  ◆ {editingTimeline ? "PERBARUI AGENDA TIMELINE" : "TAMBAH AGENDA TIMELINE BARU"}
                 </span>
                 <h2 className="font-pixel text-cream text-lg md:text-xl">
-                  {editingTimeline ? `EDIT AGENDA #${editingTimeline.id}` : "FORM AGENDA TIMELINE"}
+                  {editingTimeline ? `EDIT AGENDA #${editingTimeline.id}` : "FORM TIMELINE BARU"}
                 </h2>
               </div>
               <button
@@ -1130,78 +1401,115 @@ export default function AdminDashboardPage() {
 
             <form onSubmit={handleTimelineSubmit} className="space-y-4">
               <div>
-                <label className="font-pixel text-[10px] text-cream/80 block uppercase mb-1">
+                <label className="font-pixel text-[10px] text-cream/80 block uppercase mb-1.5">
                   Judul Acara / Agenda <span className="text-pink">*</span>
-                </label>
-                <textarea
-                  required
-                  rows={2}
-                  placeholder="Contoh: OPEN REGISTRATION SEMINAR & PERLOMBAAN"
-                  value={timelineTitle}
-                  onChange={(e) => setTimelineTitle(e.target.value)}
-                  className="w-full px-3.5 py-2 bg-navy-900 border-2 border-ink text-xs font-mono text-cream focus:outline-none focus:border-yellow"
-                />
-              </div>
-
-              <div>
-                <label className="font-pixel text-[10px] text-cream/80 block uppercase mb-1">
-                  Waktu / Tanggal Pelaksanaan <span className="text-pink">*</span>
                 </label>
                 <input
                   type="text"
                   required
-                  placeholder="Contoh: Selasa, 16 Agustus 2026 atau 16 - 20 Agustus 2026"
-                  value={timelineDate}
-                  onChange={(e) => setTimelineDate(e.target.value)}
-                  className="w-full px-3.5 py-2 bg-navy-900 border-2 border-ink text-xs font-mono text-cream focus:outline-none focus:border-yellow"
+                  placeholder="Contoh: OPEN REGISTRATION SEMINAR..."
+                  value={timelineTitle}
+                  onChange={(e) => setTimelineTitle(e.target.value)}
+                  className="w-full px-3.5 py-2.5 bg-navy-900 border-2 border-ink text-xs font-mono text-cream focus:outline-none focus:border-yellow"
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="font-pixel text-[10px] text-cream/80 block uppercase mb-1.5">
+                  Tanggal Acara <span className="text-pink">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="Contoh: Senin, 10 Agustus 2026"
+                  value={timelineDate}
+                  onChange={(e) => setTimelineDate(e.target.value)}
+                  className="w-full px-3.5 py-2.5 bg-navy-900 border-2 border-ink text-xs font-mono text-cream focus:outline-none focus:border-yellow"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="font-pixel text-[10px] text-cream/80 block uppercase mb-1">
+                  <label className="font-pixel text-[10px] text-cream/80 block uppercase mb-1.5">
                     Label Kategori
                   </label>
                   <input
                     type="text"
-                    placeholder="REGISTRASI / DEADLINE / PENGUMUMAN"
+                    placeholder="REGISTRASI / LOMBA / TM"
                     value={timelineCategory}
                     onChange={(e) => setTimelineCategory(e.target.value)}
-                    className="w-full px-3.5 py-2 bg-navy-900 border-2 border-ink text-xs font-mono text-cream focus:outline-none focus:border-yellow"
+                    className="w-full px-3.5 py-2.5 bg-navy-900 border-2 border-ink text-xs font-mono text-cream focus:outline-none focus:border-yellow uppercase"
                   />
                 </div>
 
                 <div>
-                  <label className="font-pixel text-[10px] text-cream/80 block uppercase mb-1">
+                  <label className="font-pixel text-[10px] text-cream/80 block uppercase mb-1.5">
                     Warna Badge
                   </label>
                   <select
                     value={timelineBadgeColor}
                     onChange={(e) => setTimelineBadgeColor(e.target.value as "pink" | "cyan" | "yellow")}
-                    className="w-full px-3 py-2 bg-navy-900 border-2 border-ink text-xs font-mono text-cream focus:outline-none focus:border-yellow"
+                    className="w-full px-3.5 py-2.5 bg-navy-900 border-2 border-ink text-xs font-mono text-cream focus:outline-none focus:border-yellow cursor-pointer"
                   >
-                    <option value="pink">Pink Accent</option>
-                    <option value="cyan">Cyan Accent</option>
-                    <option value="yellow">Yellow Accent</option>
+                    <option value="pink">Pink</option>
+                    <option value="cyan">Cyan</option>
+                    <option value="yellow">Yellow</option>
                   </select>
                 </div>
+              </div>
+
+              <div>
+                <label className="font-pixel text-[10px] text-cream/80 block uppercase mb-1.5">
+                  Gambar Ilustrasi Agenda (Opsional)
+                </label>
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) {
+                      if (file.size > MAX_UPLOAD_SIZE) {
+                        e.target.value = "";
+                        setTimelineFile(null);
+                        setTimelineImageUrl(editingTimeline?.imageUrl || "");
+                        showToast("Ukuran file maksimal 10 MB", "error");
+                        return;
+                      }
+                      setTimelineFile(file);
+                      setTimelineImageUrl(URL.createObjectURL(file));
+                    }
+                  }}
+                  className="w-full text-xs font-mono text-cream/70 file:mr-3 file:py-2 file:px-4 file:border-2 file:border-ink file:bg-cyan file:text-ink file:font-bold cursor-pointer"
+                />
+                <p className="mt-1.5 text-[10px] text-cyan font-mono">Batas upload gambar maksimal 10 MB.</p>
+                {timelineImageUrl && (
+                  <div className="mt-2 text-xs font-mono text-cyan truncate">
+                    Gambar terpilih: {timelineImageUrl}
+                  </div>
+                )}
               </div>
 
               <div className="flex items-center justify-end gap-3 pt-4 border-t-2 border-ink">
                 <button
                   type="button"
                   onClick={() => setIsTimelineModalOpen(false)}
-                  className="px-4 py-2 bg-navy-700 border-2 border-ink text-cream text-xs font-pixel tracking-wider hover:bg-navy-700/80 transition-colors cursor-pointer"
+                  className="px-4 py-2 border-2 border-ink bg-navy-700 text-cream/80 font-mono text-xs font-bold hover:bg-navy-600 cursor-pointer"
                 >
-                  BATAL
+                  Batal
                 </button>
                 <button
                   type="submit"
-                  disabled={submittingTimeline}
-                  className="press-btn px-5 py-2 bg-pink text-cream border-2 border-ink shadow-hard-sm text-xs font-pixel tracking-wider font-bold hover:bg-pink/90 transition-all disabled:opacity-50 cursor-pointer flex items-center gap-2"
+                  disabled={submittingTimeline || uploadingTimelineFile}
+                  className="press-btn px-5 py-2 border-2 border-ink shadow-hard-sm bg-pink text-cream font-mono text-xs font-bold flex items-center gap-2 hover:bg-pink/90 cursor-pointer"
                 >
-                  {submittingTimeline && <RefreshCw size={14} className="animate-spin" />}
-                  <span>{editingTimeline ? "SIMPAN PERUBAHAN" : "TAMBAHKAN AGENDA"}</span>
+                  {submittingTimeline || uploadingTimelineFile ? (
+                    <>
+                      <RefreshCw size={14} className="animate-spin" />
+                      <span>Menyimpan...</span>
+                    </>
+                  ) : (
+                    <span>{editingTimeline ? "Simpan Perubahan" : "Tambah Acara"}</span>
+                  )}
                 </button>
               </div>
             </form>
@@ -1209,29 +1517,31 @@ export default function AdminDashboardPage() {
         </div>
       )}
 
-      {/* DELETE TIMELINE CONFIRMATION MODAL */}
+      {/* ========================================================= */}
+      {/* MODAL DELETE TIMELINE */}
+      {/* ========================================================= */}
       {deleteTimelineTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-navy-900/80 backdrop-blur-sm animate-fade-up">
           <div className="bg-navy-800 border-3 border-ink shadow-hard-lg w-full max-w-md p-6 text-center space-y-4 relative">
-            <div className="w-12 h-12 bg-pink/20 border-2 border-pink text-pink rounded-full flex items-center justify-center mx-auto text-xl">
-              ⚠️
+            <div className="w-12 h-12 bg-pink/20 border-2 border-ink rounded-full flex items-center justify-center mx-auto text-pink">
+              <Trash2 size={24} />
             </div>
-            <h3 className="font-pixel text-cream text-base">KONFIRMASI HAPUS AGENDA</h3>
-            <p className="text-xs font-sans text-cream/80">
-              Apakah kamu yakin ingin menghapus acara <strong className="text-yellow">{deleteTimelineTarget.title}</strong>?
+            <h3 className="font-pixel text-cream text-sm">HAPUS AGENDA TIMELINE?</h3>
+            <p className="text-xs font-sans text-cream/70">
+              Apakah Anda yakin ingin menghapus acara <strong className="text-yellow">{deleteTimelineTarget.title}</strong>?
             </p>
             <div className="flex items-center justify-center gap-3 pt-2">
               <button
                 onClick={() => setDeleteTimelineTarget(null)}
-                className="px-4 py-2 bg-navy-700 border-2 border-ink text-cream text-xs font-pixel tracking-wider hover:bg-navy-700/80 transition-colors cursor-pointer"
+                className="px-4 py-2 border-2 border-ink bg-navy-700 text-cream/80 font-mono text-xs font-bold hover:bg-navy-600 cursor-pointer"
               >
-                BATAL
+                Batal
               </button>
               <button
                 onClick={handleTimelineDelete}
-                className="press-btn px-5 py-2 bg-pink text-cream border-2 border-ink shadow-hard-sm text-xs font-pixel tracking-wider font-bold hover:bg-pink/90 transition-all cursor-pointer"
+                className="press-btn px-5 py-2 border-2 border-ink shadow-hard-sm bg-pink text-cream font-mono text-xs font-bold hover:bg-pink/90 cursor-pointer"
               >
-                YA, HAPUS
+                Ya, Hapus
               </button>
             </div>
           </div>

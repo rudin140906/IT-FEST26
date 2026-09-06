@@ -1,4 +1,5 @@
 import { Competition } from "@/types/competition";
+import { withBasePath } from "@/lib/site-path";
 
 export const competitions: Competition[] = [
   {
@@ -6,7 +7,7 @@ export const competitions: Competition[] = [
     title: "Mobile Legends",
     description:
       "Buktikan skill dan kerja sama timmu di arena Mobile Legends, raih kemenangan demi kemenangan.",
-    mascot: "/maskot/mascot-ml.png",
+    mascot: withBasePath("/maskot/mascot-ml.png"),
     registerUrl: "/register",
     guidebookUrl: "#",
     color: "cyan",
@@ -16,37 +17,37 @@ export const competitions: Competition[] = [
     title: "Free Fire",
     description:
       "Turun ke medan pertempuran Free Fire, jadi yang terakhir bertahan dan raih Booyah!",
-    mascot: "/maskot/mascot-ff.png",
+    mascot: withBasePath("/maskot/mascot-ff.png"),
     registerUrl: "/register",
     guidebookUrl: "#",
     color: "pink",
   },
   {
-    id: "vibe-coding",
+    id: "vibe-coding-comp",
     title: "Vibe Coding Competition",
     description:
       "Bangun aplikasi atau produk digital secepat mungkin menggunakan bantuan AI, untuk menciptakan kreativitas.",
-    mascot: "/maskot/mascot-vibe-coding.png",
+    mascot: withBasePath("/maskot/mascot-vibe-coding.png"),
     registerUrl: "/register",
     guidebookUrl: "#",
     color: "yellow",
   },
   {
-    id: "ctf",
+    id: "ctf-comp",
     title: "Capture The Flag Competition",
     description:
       "Uji kemampuan hacking dan keamanan sibermu dengan memecahkan berbagai tantangan CTF dari level pemula hingga expert.",
-    mascot: "/maskot/mascot-ctf.png",
+    mascot: withBasePath("/maskot/mascot-ctf.png"),
     registerUrl: "/register",
     guidebookUrl: "#",
     color: "cyan",
   },
   {
-    id: "photography",
+    id: "photography-comp",
     title: "Photography Competition",
     description:
       "Tunjukkan sudut pandang kreatifmu lewat lensa kamera dan abadikan momen terbaik dalam kompetisi fotografi ini.",
-    mascot: "/maskot/mascot-photography.png",
+    mascot: withBasePath("/maskot/mascot-photography.png"),
     registerUrl: "/register",
     guidebookUrl: "#",
     color: "pink",

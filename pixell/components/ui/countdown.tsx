@@ -34,13 +34,19 @@ export default function Countdown({ targetDate }: CountdownProps) {
   ];
 
   return (
-    <div className="flex justify-center gap-3 md:gap-6">
+    <div className="grid grid-cols-4 gap-2 sm:gap-3.5 md:gap-4 w-full max-w-xl mx-auto">
       {units.map((unit) => (
-        <div key={unit.label} className="border-3 border-ink shadow-hard bg-navy-700 px-5 py-4 md:px-8 md:py-6 text-center the classmin-w-[80px] the classmd:min-w-[110px]">
-          <div className="font-mono text-3xl md:text-6xl font-bold text-yellow" suppressHydrationWarning>
+        <div
+          key={unit.label}
+          className="border-3 border-ink shadow-hard bg-navy-900/90 py-3 sm:py-4 md:py-5 px-1 sm:px-3 text-center rounded-sm group hover:border-yellow transition-all duration-200"
+        >
+          <div
+            className="font-pixelify text-2xl sm:text-4xl md:text-5xl font-bold text-yellow drop-shadow-[0_2px_0_rgba(5,7,24,1)] group-hover:scale-105 transition-transform"
+            suppressHydrationWarning
+          >
             {String(unit.value).padStart(2, "0")}
           </div>
-          <div className="text-[10px] md:text-xs font-mono text-cream/60 mt-2 tracking-widest">
+          <div className="text-[8px] sm:text-[10px] md:text-xs font-pixel font-bold text-pink mt-1 sm:mt-1.5 tracking-wider uppercase">
             {unit.label}
           </div>
         </div>

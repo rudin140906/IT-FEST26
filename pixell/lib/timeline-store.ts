@@ -1,11 +1,32 @@
 import fs from "fs/promises";
 import path from "path";
 import { timelineData, TimelineItem } from "@/data/timeline";
+import {
+  fetchTimelineFromDB,
+  insertTimelineToDB,
+  updateTimelineInDB,
+  deleteTimelineFromDB,
+  TimelineDBItem,
+} from "@/lib/db";
 
 const DATA_DIR = path.join(process.cwd(), "data");
 const FILE_PATH = path.join(DATA_DIR, "timeline.json");
 
 export async function getTimelineStore(): Promise<TimelineItem[]> {
+  // 1. Try MySQL Database first
+  const dbTimeline = await fetchTimelineFromDB();
+  if (dbTimeline && dbTimeline.length > 0) {
+    return dbTimeline.map((item: TimelineDBItem) => ({
+      id: item.id,
+      title: item.title,
+      date: item.date_string,
+      category: item.category || "AGENDA",
+      badgeColor: (item.badge_color as "pink" | "cyan" | "yellow") || "pink",
+      imageUrl: item.image_url || undefined,
+    }));
+  }
+
+  // 2. Fallback to Local JSON file store
   try {
     try {
       const fileData = await fs.readFile(FILE_PATH, "utf-8");
@@ -14,7 +35,7 @@ export async function getTimelineStore(): Promise<TimelineItem[]> {
         return parsed;
       }
     } catch {
-      // File doesn't exist yet, initialize from seed data
+      // File doesn't exist yet
     }
 
     const initialData: TimelineItem[] = timelineData.map((t) => ({ ...t }));
@@ -38,11 +59,20 @@ export async function saveTimelineStore(data: TimelineItem[]): Promise<boolean> 
 }
 
 export async function addTimelineStore(item: Omit<TimelineItem, "id">): Promise<TimelineItem> {
+  // Insert to MySQL
+  const insertedId = await insertTimelineToDB({
+    title: item.title,
+    date_string: item.date,
+    category: item.category,
+    badge_color: item.badgeColor,
+    image_url: item.imageUrl,
+  });
+
   const current = await getTimelineStore();
   const maxId = current.reduce((max, i) => (i.id > max ? i.id : max), 0);
   const newItem: TimelineItem = {
     ...item,
-    id: maxId + 1,
+    id: insertedId || maxId + 1,
   };
 
   const updated = [...current, newItem];
@@ -51,6 +81,15 @@ export async function addTimelineStore(item: Omit<TimelineItem, "id">): Promise<
 }
 
 export async function updateTimelineStore(id: number, itemData: Partial<TimelineItem>): Promise<TimelineItem | null> {
+  // Update MySQL
+  await updateTimelineInDB(id, {
+    title: itemData.title,
+    date_string: itemData.date,
+    category: itemData.category,
+    badge_color: itemData.badgeColor,
+    image_url: itemData.imageUrl,
+  });
+
   const current = await getTimelineStore();
   const index = current.findIndex((i) => i.id === id);
 
@@ -68,6 +107,8 @@ export async function updateTimelineStore(id: number, itemData: Partial<Timeline
 }
 
 export async function deleteTimelineStore(id: number): Promise<boolean> {
+  await deleteTimelineFromDB(id);
+
   const current = await getTimelineStore();
   const filtered = current.filter((i) => i.id !== id);
 

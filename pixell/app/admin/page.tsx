@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Image from "next/image";
 import Link from "next/link";
 import { Lock, User, KeyRound, ArrowLeft, AlertCircle, RefreshCw } from "lucide-react";
+import { apiPath, fetchApi, withBasePath } from "@/lib/site-path";
 
 export default function AdminLoginPage() {
   const router = useRouter();
@@ -18,13 +19,9 @@ export default function AdminLoginPage() {
   useEffect(() => {
     async function verifyAuth() {
       try {
-        if (typeof window !== "undefined" && sessionStorage.getItem("admin_auth") === "true") {
-          router.replace("/admin/partners");
-          return;
-        }
-
-        const res = await fetch("/api/admin/check");
-        if (res.ok) {
+        const res = await fetchApi("/admin/check");
+        const contentType = res.headers.get("content-type") || "";
+        if (res.ok && contentType.includes("application/json")) {
           const data = await res.json();
           if (data.authenticated) {
             sessionStorage.setItem("admin_auth", "true");
@@ -53,26 +50,42 @@ export default function AdminLoginPage() {
     setSubmitting(true);
 
     try {
-      const res = await fetch("/api/admin/login", {
+      const res = await fetchApi("/admin/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ username, password }),
       });
 
-      const data = await res.json();
+      let data: any = {};
+      const contentType = res.headers.get("content-type") || "";
+      let isJsonResponse = false;
 
-      if (res.ok && data.success) {
-        if (typeof window !== "undefined") {
-          sessionStorage.setItem("admin_auth", "true");
-          document.cookie = "admin_session=authenticated; path=/; max-age=86400; SameSite=Lax";
+      if (contentType.includes("application/json")) {
+        try {
+          data = await res.json();
+          isJsonResponse = true;
+        } catch (jsonErr) {
+          console.error("Failed to parse JSON response:", jsonErr);
         }
-        router.replace("/admin/partners");
-      } else {
-        setErrorMsg(data.error || "Username atau password salah!");
       }
-    } catch (err) {
+
+        if (res.ok && data.success) {
+          if (typeof window !== "undefined") {
+            sessionStorage.setItem("admin_auth", "true");
+          }
+          router.replace("/admin/partners");
+          return;
+        }
+
+      setErrorMsg(
+        data.error ||
+          (res.status && res.status !== 200 && isJsonResponse
+            ? `Error (${res.status}): Username atau password salah!`
+            : "Username atau password salah!")
+      );
+    } catch (err: any) {
       console.error(err);
-      setErrorMsg("Terjadi masalah koneksi server.");
+      setErrorMsg(err.message || "Terjadi masalah koneksi server.");
     } finally {
       setSubmitting(false);
     }
@@ -115,61 +128,63 @@ export default function AdminLoginPage() {
           {/* Logo & Title */}
           <div className="text-center space-y-3 mb-6">
             <div className="w-14 h-14 bg-navy-900 border-3 border-ink shadow-hard-sm mx-auto flex items-center justify-center p-2 relative">
-              <Image src="/logos/logo_navbar.png" alt="Logo" width={40} height={40} className="object-contain" />
+              <Image src={withBasePath("/logos/logo_navbar.png")} alt="Logo" width={40} height={40} style={{ width: "auto", height: "auto" }} className="object-contain" />
             </div>
+
             <div>
-              <span className="font-pixel text-[10px] text-pink tracking-widest block uppercase mb-1">
+              <span className="font-pixel text-[10px] text-pink tracking-widest block uppercase">
                 ◆ ADMIN PORTAL IT-FESTIVAL
               </span>
-              <h1 className="font-pixel text-cream text-xl sm:text-2xl tracking-wider">
+              <h1 className="font-pixel text-cream text-xl sm:text-2xl mt-1 tracking-wide drop-shadow-[0_2px_0_rgba(5,7,20,1)]">
                 PANEL OTENTIKASI
               </h1>
             </div>
           </div>
 
-
-          {/* Error Notification */}
+          {/* Alert Notification */}
           {errorMsg && (
-            <div className="bg-pink/20 border-2 border-pink p-3 mb-5 flex items-center gap-2.5 text-xs font-bold text-pink animate-fade-up">
-              <AlertCircle size={18} className="shrink-0" />
-              <span>{errorMsg}</span>
+            <div className="bg-pink/10 border-2 border-pink p-3 mb-5 flex items-start gap-2.5 text-pink animate-shake">
+              <AlertCircle size={16} className="shrink-0 mt-0.5" />
+              <span className="font-mono text-xs leading-relaxed">{errorMsg}</span>
             </div>
           )}
 
-          {/* Form Login */}
-          <form onSubmit={handleLogin} className="space-y-4" autoComplete="off">
+          {/* Login Form */}
+          <form onSubmit={handleLogin} className="space-y-4">
             <div>
-              <label className="font-pixel text-[10px] text-cream/80 block uppercase mb-1.5">
+              <label className="block font-pixel text-[11px] text-cream/90 mb-1.5 uppercase tracking-wider">
                 USERNAME
               </label>
               <div className="relative">
-                <User className="absolute left-3 top-1/2 -translate-y-1/2 text-cream/50" size={16} />
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-cream/40">
+                  <User size={16} />
+                </div>
                 <input
                   type="text"
-                  required
-                  autoComplete="username"
-                  placeholder="Masukkan username admin"
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
-                  className="w-full pl-9 pr-3 py-2.5 bg-navy-900 border-2 border-ink text-xs font-mono text-cream focus:outline-none focus:border-yellow"
+                  placeholder="Masukkan username admin..."
+                  className="w-full pl-9 pr-3 py-2.5 bg-navy-900 border-2 border-ink text-cream text-xs font-mono focus:border-yellow focus:outline-none transition-colors"
+                  required
                 />
               </div>
             </div>
 
             <div>
-              <label className="font-pixel text-[10px] text-cream/80 block uppercase mb-1.5">
+              <label className="block font-pixel text-[11px] text-cream/90 mb-1.5 uppercase tracking-wider">
                 PASSWORD
               </label>
               <div className="relative">
-                <KeyRound className="absolute left-3 top-1/2 -translate-y-1/2 text-cream/50" size={16} />
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-cream/40">
+                  <KeyRound size={16} />
+                </div>
                 <input
                   type="password"
-                  required
-                  autoComplete="current-password"
-                  placeholder="Masukkan password admin"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="w-full pl-9 pr-3 py-2.5 bg-navy-900 border-2 border-ink text-xs font-mono text-cream focus:outline-none focus:border-yellow"
+                  placeholder="Masukkan password admin..."
+                  className="w-full pl-9 pr-3 py-2.5 bg-navy-900 border-2 border-ink text-cream text-xs font-mono focus:border-yellow focus:outline-none transition-colors"
+                  required
                 />
               </div>
             </div>
@@ -177,17 +192,17 @@ export default function AdminLoginPage() {
             <button
               type="submit"
               disabled={submitting}
-              className="press-btn w-full py-3 bg-yellow text-ink border-3 border-ink shadow-hard text-xs font-pixel tracking-wider font-bold hover:bg-yellow-dim transition-all cursor-pointer flex items-center justify-center gap-2 mt-6 uppercase"
+              className="w-full press-btn py-3 px-4 bg-yellow text-ink border-2 border-ink shadow-hard-sm font-pixel text-xs tracking-wider flex items-center justify-center gap-2 hover:bg-yellow/90 disabled:opacity-50 transition-all mt-6 cursor-pointer"
             >
               {submitting ? (
                 <>
-                  <RefreshCw size={16} className="animate-spin" />
-                  <span>MEMPROSES...</span>
+                  <RefreshCw size={14} className="animate-spin" />
+                  <span>MEMPROSES LOGIN...</span>
                 </>
               ) : (
                 <>
-                  <Lock size={16} />
-                  <span>MASUK KELOLA PARTNER &gt;</span>
+                  <Lock size={14} />
+                  <span>MASUK KELOLA PARTNER ›</span>
                 </>
               )}
             </button>
@@ -196,8 +211,10 @@ export default function AdminLoginPage() {
       </main>
 
       {/* Footer */}
-      <footer className="p-4 text-center text-[10px] font-mono text-cream/50 relative z-10">
-        © 2026 IT-Festival Admin Control Center
+      <footer className="p-4 text-center border-t border-ink/40 bg-navy-900/60 relative z-10">
+        <p className="font-mono text-[10px] text-cream/40">
+          © 2026 IT-FESTIVAL ADMIN SYSTEM — POLITEKNIK NEGERI SRIWIJAYA
+        </p>
       </footer>
     </div>
   );

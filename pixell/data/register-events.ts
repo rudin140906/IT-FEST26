@@ -19,7 +19,7 @@ export const registerEventsData: RegisterEventItem[] = [
     description: "Buktikan skill dan kerja sama timmu di arena Mobile Legends, raih kemenangan demi kemenangan.",
     iconType: "gamepad",
     badgeColor: "cyan",
-    gformUrl: "https://forms.google.com/",
+    gformUrl: "https://bit.ly/PendaftaranLombaMobileLegendsITFestival2026",
   },
   {
     id: "ff",
@@ -29,7 +29,7 @@ export const registerEventsData: RegisterEventItem[] = [
     description: "Turun ke medan pertempuran Free Fire, jadi yang terakhir bertahan dan raih Booyah!",
     iconType: "flame",
     badgeColor: "pink",
-    gformUrl: "https://forms.google.com/",
+    gformUrl: "https://bit.ly/PendaftaranLombaFreeFireITFestival2026",
   },
   {
     id: "vibe-coding-comp",
@@ -39,7 +39,7 @@ export const registerEventsData: RegisterEventItem[] = [
     description: "Bangun aplikasi atau produk digital secepat mungkin menggunakan bantuan AI, untuk menciptakan kreativitas.",
     iconType: "code",
     badgeColor: "yellow",
-    gformUrl: "https://forms.google.com/",
+    gformUrl: "https://bit.ly/PendaftaranLombaVibeCodingITFestival2026",
   },
   {
     id: "ctf-comp",
@@ -49,7 +49,7 @@ export const registerEventsData: RegisterEventItem[] = [
     description: "Uji kemampuan hacking dan keamanan sibermu dengan memecahkan berbagai tantangan CTF dari level pemula hingga expert.",
     iconType: "shield",
     badgeColor: "cyan",
-    gformUrl: "https://forms.google.com/",
+    gformUrl: "https://bit.ly/PendaftranLombaCaptureTheFlagITFestival2026",
   },
   {
     id: "photography-comp",
@@ -59,7 +59,7 @@ export const registerEventsData: RegisterEventItem[] = [
     description: "Tunjukkan sudut pandang kreatifmu lewat lensa kamera dan abadikan momen terbaik dalam kompetisi fotografi ini.",
     iconType: "camera",
     badgeColor: "pink",
-    gformUrl: "https://forms.google.com/",
+    gformUrl: "https://bit.ly/PendaftaranLombaPromtographyITFestival2026",
   },
 
   // PELATIHAN (2 Events from data/trainings.ts)
@@ -71,7 +71,7 @@ export const registerEventsData: RegisterEventItem[] = [
     description: "Belajar membangun aplikasi dan produk digital secara cepat dengan bantuan AI, dari ide sampai jadi produk nyata.",
     iconType: "code",
     badgeColor: "yellow",
-    gformUrl: "https://forms.google.com/",
+    gformUrl: "http://bit.ly/PendaftaranPelatihanVibeCodingITFestival2026",
   },
   {
     id: "cyber-security-training",
@@ -81,7 +81,7 @@ export const registerEventsData: RegisterEventItem[] = [
     description: "Pelajari dasar-dasar keamanan siber, mulai dari deteksi celah keamanan hingga teknik perlindungan sistem.",
     iconType: "shield",
     badgeColor: "cyan",
-    gformUrl: "https://forms.google.com/",
+    gformUrl: "https://bit.ly/PendaftaranPelatihanCybersecurityITFestival2026",
   },
 
   // SEMINAR (1 Event from app/seminar/page.tsx)
@@ -93,6 +93,6 @@ export const registerEventsData: RegisterEventItem[] = [
     description: "Ikuti seminar kami dan dapatkan wawasan berharga langsung dari para ahli di bidang teknologi.",
     iconType: "mic",
     badgeColor: "pink",
-    gformUrl: "https://forms.google.com/",
+    gformUrl: "https://bit.ly/PendaftaranSeminarITFestival2026",
   },
 ];

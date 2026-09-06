@@ -1,18 +1,40 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import EventCard from "@/components/register/event-card";
-import { registerEventsData } from "@/data/register-events";
+import { registerEventsData, RegisterEventItem } from "@/data/register-events";
 import { Trophy, Code2, Mic } from "lucide-react";
+import { apiPath } from "@/lib/site-path";
 
 export default function RegisterPage() {
+  const [eventsList, setEventsList] = useState<RegisterEventItem[]>(registerEventsData);
+
+  useEffect(() => {
+    async function loadEvents() {
+      try {
+        const res = await fetch(apiPath("/events"));
+        if (res.ok) {
+          const data = await res.json();
+          if (Array.isArray(data) && data.length > 0) {
+            setEventsList(data);
+          }
+        }
+      } catch (err) {
+        console.error("Error loading register events:", err);
+      }
+    }
+    loadEvents();
+  }, []);
+
   // Filter events matching website definitions
-  const kompetisiTop = registerEventsData.slice(0, 3); // Mobile Legends, Free Fire, Vibe Coding Comp
-  const kompetisiBottom = registerEventsData.slice(3, 5); // CTF, Photography
-  const pelatihanEvents = registerEventsData.filter((e) => e.category === "pelatihan"); // Vibe Coding, Cyber Security
-  const seminarEvents = registerEventsData.filter((e) => e.category === "seminar"); // Seminar IT-Festival 2026
+  const kompetisiEvents = eventsList.filter((e) => e.category === "kompetisi");
+  const kompetisiTop = kompetisiEvents.slice(0, 3);
+  const kompetisiBottom = kompetisiEvents.slice(3);
+  const pelatihanEvents = eventsList.filter((e) => e.category === "pelatihan");
+  const seminarEvents = eventsList.filter((e) => e.category === "seminar");
 
   return (
-    <div className="min-h-screen bg-navy-900 text-cream font-sans relative overflow-x-hidden selection:bg-pink selection:text-ink pb-28 pt-24 md:pt-28">
+    <div className="min-h-screen bg-navy-900 text-cream font-sans relative overflow-x-hidden selection:bg-pink selection:text-ink pb-28 pt-32 sm:pt-36 md:pt-40">
       {/* RETRO PIXEL GRID BACKGROUND & AMBIENT NEON GLOW */}
       <div className="absolute inset-0 bg-[linear-gradient(rgba(245,241,224,0.05)_1px,transparent_1px),linear-gradient(90deg,rgba(245,241,224,0.05)_1px,transparent_1px)] bg-[size:32px_32px] pointer-events-none" />
       <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-pink/15 rounded-full blur-[140px] -z-10 pointer-events-none animate-pulse" />
@@ -27,16 +49,16 @@ export default function RegisterPage() {
       <main className="max-w-6xl mx-auto px-4 md:px-6 relative z-10 space-y-16">
         {/* HEADER SECTION */}
         <div className="text-center space-y-4 max-w-3xl mx-auto">
-          <span className="font-pixel text-xs text-yellow tracking-widest uppercase block">
+          <span className="inline-block font-pixel text-xs text-yellow tracking-widest px-3 py-1 bg-yellow/15 border border-yellow/40 rounded-sm uppercase">
             ◆ REGISTRASI IT-FESTIVAL 2026
           </span>
-          <h1 className="font-pixel text-cream text-3xl sm:text-4xl md:text-5xl tracking-tight leading-tight drop-shadow-[0_4px_0_rgba(5,7,20,1)] uppercase">
-            PENDAFTARAN ACARA
+          <h1 className="font-pixel text-cream text-3xl sm:text-4xl md:text-5xl tracking-tight leading-tight drop-shadow-[0_4px_0_rgba(5,7,24,1)] uppercase">
+            PENDAFTARAN <span className="text-yellow">ACARA</span>
           </h1>
-          <p className="text-cream/80 text-sm md:text-base font-sans leading-relaxed max-w-2xl mx-auto">
+          <p className="text-cream/80 text-sm md:text-base font-sans leading-relaxed max-w-2xl mx-auto font-medium">
             Pilih perlombaan, pelatihan, atau seminar yang ingin kamu ikuti dan amankan tiketmu di IT-FESTIVAL 2026.
           </p>
-          <div className="w-24 h-1.5 bg-yellow mx-auto mt-4 border-2 border-ink shadow-hard-sm" />
+          <div className="w-28 h-1.5 bg-yellow mx-auto mt-4 border-2 border-ink shadow-hard-sm" />
         </div>
 
         {/* ========================================================= */}

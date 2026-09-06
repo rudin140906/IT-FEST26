@@ -1,4 +1,5 @@
 import { Speaker } from "@/types/speaker";
+import { withBasePath } from "@/lib/site-path";
 
 export const speakers: Speaker[] = [
   {
@@ -6,9 +7,9 @@ export const speakers: Speaker[] = [
     name: "Avip Syaifulloh, S.T.",
     role: "CEO WPU Course",
     category: "guest-star",
-    photo: "/speakers/avip-syaifulloh.jpg",
+    photo: withBasePath("/speakers/avip-syaifulloh.jpg"),
     photoPosition: "center 25%",
-    cv: "/speakers/cv-avip-syaifulloh.pdf",
+    cv: withBasePath("/speakers/cv-avip-syaifulloh.pdf"),
     color: "pink",
   },
   {
@@ -16,9 +17,9 @@ export const speakers: Speaker[] = [
     name: "Rahmi Liza, S.Tr.Kom., M.Sc.",
     role: "Software Engineer",
     category: "speaker",
-    photo: "/speakers/rahmi-liza.jpg",
+    photo: withBasePath("/speakers/rahmi-liza.jpg"),
     photoPosition: "center 60%",
-    cv: "/speakers/cv-rahmi-liza.pdf",
+    cv: withBasePath("/speakers/cv-rahmi-liza.pdf"),
     color: "cyan",
   },
 ];

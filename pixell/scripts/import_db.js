@@ -20,7 +20,7 @@ async function main() {
 
     console.log("Executing schema.sql...");
     await connection.query(sqlContent);
-    console.log("SUCCESS! Database 'it_festival' and table 'partners' have been created and populated!");
+    console.log("SUCCESS! Database 'it_festival' and tables 'sponsors' & 'media_partners' have been created!");
 
     await connection.end();
   } catch (err) {

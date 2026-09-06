@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+
+export const dynamic = "force-static";
 import {
   getTimelineStore,
   addTimelineStore,
@@ -6,10 +8,32 @@ import {
   deleteTimelineStore,
 } from "@/lib/timeline-store";
 
+let cachedTimelineData: { data: any; timestamp: number } | null = null;
+const CACHE_TTL_MS = 5000; // 5s TTL
+
+export function invalidateTimelineCache() {
+  cachedTimelineData = null;
+}
+
 export async function GET() {
+  const now = Date.now();
+  if (cachedTimelineData && now - cachedTimelineData.timestamp < CACHE_TTL_MS) {
+    return NextResponse.json(cachedTimelineData.data, {
+      headers: {
+        "Cache-Control": "public, s-maxage=5, stale-while-revalidate=20",
+      },
+    });
+  }
+
   try {
     const items = await getTimelineStore();
-    return NextResponse.json({ success: true, timeline: items });
+    const result = { success: true, timeline: items };
+    cachedTimelineData = { data: result, timestamp: now };
+    return NextResponse.json(result, {
+      headers: {
+        "Cache-Control": "public, s-maxage=5, stale-while-revalidate=20",
+      },
+    });
   } catch (error) {
     console.error("GET timeline error:", error);
     return NextResponse.json({ error: "Gagal mengambil data timeline" }, { status: 500 });
@@ -18,8 +42,9 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
+    invalidateTimelineCache();
     const body = await request.json();
-    const { title, date, category, badgeColor } = body;
+    const { title, date, category, badgeColor, imageUrl } = body;
 
     if (!title || !date) {
       return NextResponse.json({ error: "Judul dan Tanggal agenda wajib diisi!" }, { status: 400 });
@@ -28,8 +53,9 @@ export async function POST(request: Request) {
     const newItem = await addTimelineStore({
       title: title.trim(),
       date: date.trim(),
-      category: category?.trim() || "AGENDAR",
+      category: category?.trim() || "AGENDA",
       badgeColor: badgeColor || "pink",
+      imageUrl: imageUrl || undefined,
     });
 
     return NextResponse.json({ success: true, item: newItem }, { status: 201 });
@@ -41,8 +67,9 @@ export async function POST(request: Request) {
 
 export async function PUT(request: Request) {
   try {
+    invalidateTimelineCache();
     const body = await request.json();
-    const { id, title, date, category, badgeColor } = body;
+    const { id, title, date, category, badgeColor, imageUrl } = body;
 
     if (!id) {
       return NextResponse.json({ error: "ID acara wajib disertakan" }, { status: 400 });
@@ -53,6 +80,7 @@ export async function PUT(request: Request) {
       ...(date && { date: date.trim() }),
       ...(category && { category: category.trim() }),
       ...(badgeColor && { badgeColor }),
+      ...(imageUrl !== undefined && { imageUrl }),
     });
 
     if (!updatedItem) {
@@ -68,6 +96,7 @@ export async function PUT(request: Request) {
 
 export async function DELETE(request: Request) {
   try {
+    invalidateTimelineCache();
     const { searchParams } = new URL(request.url);
     const idParam = searchParams.get("id");
 

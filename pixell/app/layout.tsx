@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Press_Start_2P, Pixelify_Sans, Space_Mono } from "next/font/google";
 import ClientLayout from "@/components/layout/client-layout";
+import { withBasePath } from "@/lib/site-path";
 import "./globals.css";
 
 const pixelFont = Press_Start_2P({
@@ -25,12 +26,9 @@ export const metadata: Metadata = {
   description:
     "Festival teknologi terbesar 2026 yang menghadirkan kompetisi, pelatihan, dan seminar untuk talenta digital masa depan.",
   icons: {
-    icon: [
-      { url: "/logos/logo_navbar.png" },
-      { url: "/icon.png" },
-    ],
-    shortcut: "/logos/logo_navbar.png",
-    apple: "/logos/logo_navbar.png",
+    icon: withBasePath("/logos/logo_navbar.png"),
+    shortcut: withBasePath("/logos/logo_navbar.png"),
+    apple: withBasePath("/logos/logo_navbar.png"),
   },
 };
 

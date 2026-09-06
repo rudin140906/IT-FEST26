@@ -1,0 +1,61 @@
+[
+  {
+    "name": "Sewa Kamera",
+    "logoUrl": "/logos/sponsors/sewa_kamera.svg",
+    "websiteUrl": "",
+    "isVisible": true,
+    "id": 8,
+    "createdAt": "2026-08-09T13:37:19.600Z"
+  },
+  {
+    "name": "Sewa Kamera",
+    "logoUrl": "/logos/sponsors/sewa_kamera.svg",
+    "websiteUrl": "",
+    "isVisible": false,
+    "id": 7,
+    "createdAt": "2026-08-09T13:37:18.708Z"
+  },
+  {
+    "name": "Cibubur IT Centervook",
+    "logoUrl": "/logos/sponsors/cibubur_it.svg",
+    "websiteUrl": "",
+    "isVisible": true,
+    "id": 6,
+    "createdAt": "2026-08-09T13:31:22.252Z"
+  },
+  {
+    "id": 1,
+    "name": "Sewa Kamera",
+    "logoUrl": "/logos/sponsors/sewa_kamera.svg",
+    "isVisible": true,
+    "websiteUrl": ""
+  },
+  {
+    "id": 2,
+    "name": "Risa Florist & Co.",
+    "logoUrl": "/logos/sponsors/risa_florist.svg",
+    "isVisible": false,
+    "websiteUrl": ""
+  },
+  {
+    "id": 3,
+    "name": "Syneps Academy",
+    "logoUrl": "/logos/sponsors/syneps.svg",
+    "isVisible": false,
+    "websiteUrl": ""
+  },
+  {
+    "id": 4,
+    "name": "Cibubur IT Center",
+    "logoUrl": "/logos/sponsors/cibubur_it.svg",
+    "isVisible": false,
+    "websiteUrl": ""
+  },
+  {
+    "id": 5,
+    "name": "Bank BRI",
+    "logoUrl": "/logos/sponsors/bri.svg",
+    "isVisible": false,
+    "websiteUrl": ""
+  }
+]

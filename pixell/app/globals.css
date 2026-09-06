@@ -1,35 +1,86 @@
 @import "tailwindcss";
 
+:root {
+  --font-pixel: "Press Start 2P", monospace;
+  --font-pixelify: "Pixelify Sans", sans-serif;
+  --font-mono: "Space Mono", monospace;
+}
+
 @theme {
   --font-pixel: var(--font-pixel), "Press Start 2P", monospace;
   --font-pixelify: var(--font-pixelify), "Pixelify Sans", sans-serif;
   --font-sans: var(--font-pixelify), var(--font-pixel), sans-serif;
   --font-mono: var(--font-mono), monospace;
 
-  --color-navy-900: #080B2E;
-  --color-navy-800: #0D1140;
-  --color-navy-700: #141A5C;
+  --color-navy-900: #070926;
+  --color-navy-800: #0E1342;
+  --color-navy-700: #151C5C;
   --color-yellow: #FFD500;
   --color-yellow-dim: #E6BE00;
-  --color-cream: #F5F1E0;
-  --color-pink: #FF4D8D;
-  --color-cyan: #3FE1D6;
-  --color-ink: #050714;
+  --color-cream: #F7F4E9;
+  --color-pink: #FF3B80;
+  --color-cyan: #00F0FF;
+  --color-ink: #050718;
 
-  --shadow-hard: 6px 6px 0 #050714;
-  --shadow-hard-sm: 4px 4px 0 #050714;
-  --shadow-hard-lg: 10px 10px 0 #050714;
+  --shadow-hard: 6px 6px 0 #050718;
+  --shadow-hard-sm: 4px 4px 0 #050718;
+  --shadow-hard-lg: 10px 10px 0 #050718;
 }
 
 body {
   background-color: var(--color-navy-900);
   color: var(--color-cream);
   font-family: var(--font-pixelify), var(--font-pixel), sans-serif;
+  overflow-x: hidden;
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 10px;
+}
+::-webkit-scrollbar-track {
+  background: #070926;
+}
+::-webkit-scrollbar-thumb {
+  background: #FF3B80;
+  border: 2px solid #050718;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #FFD500;
 }
 
 @layer utilities {
+  .press-btn {
+    transition: all 0.18s cubic-bezier(0.4, 0, 0.2, 1);
+    cursor: pointer;
+    user-select: none;
+  }
+  .press-btn:hover {
+    transform: translate(-3px, -3px);
+    box-shadow: 8px 8px 0 #050718 !important;
+  }
+  .press-btn:active {
+    transform: translate(2px, 2px);
+    box-shadow: 2px 2px 0 #050718 !important;
+  }
+
+  .glow-pink {
+    box-shadow: 0 0 25px rgba(255, 59, 128, 0.45);
+  }
+  .glow-cyan {
+    box-shadow: 0 0 25px rgba(0, 240, 255, 0.45);
+  }
+  .glow-yellow {
+    box-shadow: 0 0 25px rgba(255, 213, 0, 0.45);
+  }
+
+  .glass-card {
+    background: rgba(14, 19, 66, 0.85);
+    backdrop-filter: blur(12px);
+  }
+
   .animate-marquee {
-    animation: marquee 20s linear infinite;
+    animation: marquee 22s linear infinite;
   }
   .animate-float {
     animation: float 4s ease-in-out infinite;

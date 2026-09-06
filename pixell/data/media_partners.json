@@ -1,0 +1,38 @@
+[
+  {
+    "id": 101,
+    "name": "HIMA IF",
+    "logoUrl": "/logos/media_partners/hima_if.svg",
+    "isVisible": true
+  },
+  {
+    "id": 102,
+    "name": "HMI",
+    "logoUrl": "/logos/media_partners/hmi.svg",
+    "isVisible": true
+  },
+  {
+    "id": 103,
+    "name": "CMS",
+    "logoUrl": "/logos/media_partners/cms.svg",
+    "isVisible": true
+  },
+  {
+    "id": 104,
+    "name": "HMJ AOK",
+    "logoUrl": "/logos/media_partners/hmj_aok.svg",
+    "isVisible": true
+  },
+  {
+    "id": 105,
+    "name": "BNCC",
+    "logoUrl": "/logos/media_partners/bncc.svg",
+    "isVisible": true
+  },
+  {
+    "id": 106,
+    "name": "HIMA ILKOM FMIPA UNNES",
+    "logoUrl": "/logos/media_partners/hima_ilkom.svg",
+    "isVisible": true
+  }
+]

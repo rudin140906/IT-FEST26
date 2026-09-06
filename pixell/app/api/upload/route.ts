@@ -1,28 +1,59 @@
 import { NextResponse } from "next/server";
+
+export const dynamic = "force-static";
 import fs from "fs/promises";
 import path from "path";
+
+const ALLOWED_IMAGE_TYPES = ["image/png", "image/jpeg", "image/jpg", "image/webp", "image/svg+xml", "image/gif"];
+const ALLOWED_PDF_TYPE = "application/pdf";
+const MAX_FILE_SIZE = 30 * 1024 * 1024; // 30MB
+
+function isPdfFile(file: File) {
+  const fileName = file.name.toLowerCase();
+  const fileType = (file.type || "").toLowerCase();
+  return fileType === ALLOWED_PDF_TYPE || fileType.includes("pdf") || fileName.endsWith(".pdf");
+}
 
 export async function POST(request: Request) {
   try {
     const formData = await request.formData();
     const file = formData.get("file") as File | null;
+    const fileType = (formData.get("type") as string) || "image";
 
     if (!file) {
-      return NextResponse.json({ error: "File gambar belum dipilih" }, { status: 400 });
+      return NextResponse.json({ error: "File belum dipilih" }, { status: 400 });
     }
 
-    if (!file.type.startsWith("image/")) {
-      return NextResponse.json({ error: "File harus berupa gambar (PNG, SVG, JPG, WEBP)" }, { status: 400 });
+    if (file.size > MAX_FILE_SIZE) {
+      return NextResponse.json({ error: "Ukuran file maksimal 30MB" }, { status: 400 });
+    }
+
+    const isGuidebook = fileType === "guidebook";
+
+    if (isGuidebook) {
+      if (!isPdfFile(file)) {
+        return NextResponse.json(
+          { error: "File guidebook harus berupa PDF (.pdf)" },
+          { status: 400 }
+        );
+      }
+    } else {
+      if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
+        return NextResponse.json(
+          { error: "File harus berupa gambar (PNG, SVG, JPG, WEBP)" },
+          { status: 400 }
+        );
+      }
     }
 
     const bytes = await file.arrayBuffer();
     const buffer = Buffer.from(bytes);
 
-    // Save file to public/uploads
-    const uploadsDir = path.join(process.cwd(), "public", "uploads");
+    const subDir = isGuidebook ? "guidebooks" : "";
+    const uploadsDir = path.join(process.cwd(), "public", "uploads", subDir);
     await fs.mkdir(uploadsDir, { recursive: true });
 
-    const fileExt = path.extname(file.name) || ".png";
+    const fileExt = path.extname(file.name) || (isGuidebook ? ".pdf" : ".png");
     const safeBaseName = path
       .basename(file.name, fileExt)
       .toLowerCase()
@@ -32,18 +63,19 @@ export async function POST(request: Request) {
 
     await fs.writeFile(filePath, buffer);
 
-    // Return served API URL (/api/uploads/filename.ext) which is lightweight and reliable
-    const apiServedUrl = `/api/uploads/${filename}`;
-    const publicUrl = `/uploads/${filename}`;
+    const urlPath = isGuidebook ? `/uploads/guidebooks/${filename}` : `/uploads/${filename}`;
+    const apiServedUrl = isGuidebook ? `/api/uploads/guidebooks/${filename}` : `/api/uploads/${filename}`;
 
     return NextResponse.json({
       success: true,
       url: apiServedUrl,
-      publicUrl,
+      publicUrl: urlPath,
       apiServedUrl,
+      filename,
+      isGuidebook,
     });
   } catch (error) {
     console.error("Upload error:", error);
-    return NextResponse.json({ error: "Gagal mengunggah file gambar" }, { status: 500 });
+    return NextResponse.json({ error: "Gagal mengunggah file" }, { status: 500 });
   }
 }

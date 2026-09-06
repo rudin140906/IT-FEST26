@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { createHmac } from "crypto";
 
-export const dynamic = "force-static";
+export const dynamic = "force-dynamic";
 
 const ADMIN_USER = process.env.ADMIN_USER || "admin";
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "ITFest2026!Admin";

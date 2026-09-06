@@ -1,8 +1,6 @@
 import { NextResponse } from "next/server";
-
-export const dynamic = "force-static";
-import fs from "fs/promises";
 import path from "path";
+import { supabase, STORAGE_BUCKET } from "@/lib/supabase";
 
 const ALLOWED_IMAGE_TYPES = ["image/png", "image/jpeg", "image/jpg", "image/webp", "image/svg+xml", "image/gif"];
 const ALLOWED_PDF_TYPE = "application/pdf";
@@ -49,33 +47,50 @@ export async function POST(request: Request) {
     const bytes = await file.arrayBuffer();
     const buffer = Buffer.from(bytes);
 
-    const subDir = isGuidebook ? "guidebooks" : "";
-    const uploadsDir = path.join(process.cwd(), "public", "uploads", subDir);
-    await fs.mkdir(uploadsDir, { recursive: true });
-
     const fileExt = path.extname(file.name) || (isGuidebook ? ".pdf" : ".png");
     const safeBaseName = path
       .basename(file.name, fileExt)
       .toLowerCase()
       .replace(/[^a-z0-9]/g, "_");
     const filename = `${safeBaseName}_${Date.now()}${fileExt}`;
-    const filePath = path.join(uploadsDir, filename);
+    const storagePath = isGuidebook ? `guidebooks/${filename}` : `uploads/${filename}`;
 
-    await fs.writeFile(filePath, buffer);
+    // Upload to Supabase Storage
+    const { data: uploadData, error: uploadError } = await supabase.storage
+      .from(STORAGE_BUCKET)
+      .upload(storagePath, buffer, {
+        contentType: file.type || (isGuidebook ? "application/pdf" : "image/png"),
+        upsert: true,
+      });
 
-    const urlPath = isGuidebook ? `/uploads/guidebooks/${filename}` : `/uploads/${filename}`;
-    const apiServedUrl = isGuidebook ? `/api/uploads/guidebooks/${filename}` : `/api/uploads/${filename}`;
+    if (uploadError) {
+      console.warn("Supabase storage upload error:", uploadError.message);
+      // If bucket doesn't exist yet, return helpful error
+      return NextResponse.json(
+        {
+          error: `Gagal upload ke Supabase Storage (${uploadError.message}). Pastikan bucket '${STORAGE_BUCKET}' sudah dibuat dan di-set Public di Supabase Storage Dashboard.`,
+        },
+        { status: 500 }
+      );
+    }
+
+    // Get public URL from Supabase Storage
+    const { data: publicUrlData } = supabase.storage
+      .from(STORAGE_BUCKET)
+      .getPublicUrl(storagePath);
+
+    const publicUrl = publicUrlData.publicUrl;
 
     return NextResponse.json({
       success: true,
-      url: apiServedUrl,
-      publicUrl: urlPath,
-      apiServedUrl,
+      url: publicUrl,
+      publicUrl: publicUrl,
+      apiServedUrl: publicUrl,
       filename,
       isGuidebook,
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error("Upload error:", error);
-    return NextResponse.json({ error: "Gagal mengunggah file" }, { status: 500 });
+    return NextResponse.json({ error: "Gagal mengunggah file: " + (error?.message || "Unknown error") }, { status: 500 });
   }
 }

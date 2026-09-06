@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-export const dynamic = "force-static";
+export const dynamic = "force-dynamic";
 import { getEventsStore, updateEventStore } from "@/lib/events-store";
 
 let cachedEventsData: { data: unknown; timestamp: number } | null = null;

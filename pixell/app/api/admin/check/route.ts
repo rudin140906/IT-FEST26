@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-export const dynamic = "force-static";
+export const dynamic = "force-dynamic";
 import { cookies } from "next/headers";
 import { createHmac, timingSafeEqual } from "crypto";
 

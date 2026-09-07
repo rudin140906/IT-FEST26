@@ -2,12 +2,6 @@ import { NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
 import {
-  fetchMediaPartnersFromDB,
-  insertMediaPartnerToDB,
-  updateMediaPartnerInDB,
-  deleteMediaPartnerFromDB,
-} from "@/lib/db";
-import {
   getMediaPartnersStore,
   addMediaPartnerStore,
   updateMediaPartnerStore,
@@ -26,7 +20,7 @@ type MediaPartnerApiItem = {
 
 type MediaPartnersApiResponse = {
   mediaPartners: MediaPartnerApiItem[];
-  source: "mysql" | "file";
+  source: "supabase" | "file";
 };
 
 let cachedMediaPartnersData: { data: MediaPartnersApiResponse; timestamp: number } | null = null;
@@ -46,38 +40,32 @@ export async function GET() {
     });
   }
 
-  let mediaPartnersList = null;
-  let source: "mysql" | "file" = "file";
-
   try {
-    const dbMediaPartners = await fetchMediaPartnersFromDB();
-    if (dbMediaPartners && dbMediaPartners.length > 0) {
-      mediaPartnersList = dbMediaPartners.map((m) => ({
+    // getMediaPartnersStore handles DB-first fetching internally
+    const mediaPartners = await getMediaPartnersStore();
+    const mediaPartnersList = mediaPartners
+      .filter((m) => m.isVisible !== false)
+      .map((m) => ({
         id: m.id,
         name: m.name,
-        logoUrl: m.logo_url,
-        websiteUrl: normalizePartnerWebsiteUrl(m.website_url),
-        createdAt: m.created_at,
-        isVisible: m.is_visible !== 0,
-      })).filter((m) => m.isVisible !== false);
-      source = "mysql";
-    }
+        logoUrl: m.logoUrl,
+        websiteUrl: normalizePartnerWebsiteUrl(m.websiteUrl),
+        createdAt: m.createdAt,
+        isVisible: m.isVisible ?? true,
+      }));
+
+    const result: MediaPartnersApiResponse = { mediaPartners: mediaPartnersList, source: "supabase" };
+    cachedMediaPartnersData = { data: result, timestamp: now };
+
+    return NextResponse.json(result, {
+      headers: {
+        "Cache-Control": "public, s-maxage=5, stale-while-revalidate=20",
+      },
+    });
   } catch (error) {
-    console.error("API media-partners route DB read warning:", error);
+    console.error("GET media-partners error:", error);
+    return NextResponse.json({ error: "Gagal mengambil data media partner" }, { status: 500 });
   }
-
-  if (!mediaPartnersList) {
-    mediaPartnersList = await getMediaPartnersStore();
-  }
-
-  const result = { mediaPartners: mediaPartnersList, source };
-  cachedMediaPartnersData = { data: result, timestamp: now };
-
-  return NextResponse.json(result, {
-    headers: {
-      "Cache-Control": "public, s-maxage=5, stale-while-revalidate=20",
-    },
-  });
 }
 
 export async function POST(request: Request) {
@@ -94,18 +82,12 @@ export async function POST(request: Request) {
       );
     }
 
+    // addMediaPartnerStore handles DB insert internally
     const newMediaPartner = await addMediaPartnerStore({
       name,
       logoUrl,
       websiteUrl: normalizedWebsiteUrl,
       isVisible: isVisible ?? true,
-    });
-
-    await insertMediaPartnerToDB({
-      name,
-      logo_url: logoUrl,
-      website_url: normalizedWebsiteUrl,
-      is_visible: isVisible === false ? 0 : 1,
     });
 
     return NextResponse.json({ success: true, mediaPartner: newMediaPartner }, { status: 201 });
@@ -126,6 +108,7 @@ export async function PUT(request: Request) {
       return NextResponse.json({ error: "ID media partner wajib disertakan" }, { status: 400 });
     }
 
+    // updateMediaPartnerStore handles DB update internally
     const updatedMediaPartner = await updateMediaPartnerStore(Number(id), {
       ...(name && { name }),
       ...(logoUrl && { logoUrl }),
@@ -136,13 +119,6 @@ export async function PUT(request: Request) {
     if (!updatedMediaPartner) {
       return NextResponse.json({ error: "Media partner tidak ditemukan" }, { status: 404 });
     }
-
-    await updateMediaPartnerInDB(Number(id), {
-      name,
-      logo_url: logoUrl,
-      website_url: normalizedWebsiteUrl,
-      is_visible: isVisible !== undefined ? (isVisible ? 1 : 0) : undefined,
-    });
 
     return NextResponse.json({ success: true, mediaPartner: updatedMediaPartner });
   } catch (error) {
@@ -161,9 +137,8 @@ export async function DELETE(request: Request) {
       return NextResponse.json({ error: "ID media partner wajib disertakan" }, { status: 400 });
     }
 
-    const id = Number(idParam);
-    const deleted = await deleteMediaPartnerStore(id);
-    await deleteMediaPartnerFromDB(id);
+    // deleteMediaPartnerStore handles DB delete internally
+    const deleted = await deleteMediaPartnerStore(Number(idParam));
 
     if (!deleted) {
       return NextResponse.json(

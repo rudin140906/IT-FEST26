@@ -2,16 +2,6 @@ import { NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
 import {
-  fetchSponsorsFromDB,
-  fetchMediaPartnersFromDB,
-  insertSponsorToDB,
-  insertMediaPartnerToDB,
-  updateSponsorInDB,
-  updateMediaPartnerInDB,
-  deleteSponsorFromDB,
-  deleteMediaPartnerFromDB,
-} from "@/lib/db";
-import {
   getSponsorsStore,
   getMediaPartnersStore,
   addSponsorStore,
@@ -40,7 +30,7 @@ type PartnersApiResponse = {
   all: PartnerApiItem[];
   sponsors: PartnerApiItem[];
   mediaPartners: PartnerApiItem[];
-  source: "mysql" | "file";
+  source: "supabase" | "file";
 };
 
 const partnersCache = new Map<PartnersCacheKey, { data: PartnersApiResponse; timestamp: number }>();
@@ -65,95 +55,55 @@ export async function GET(request: Request) {
     });
   }
 
-  let resultData: PartnersApiResponse | null = null;
-
-  const fileSponsors = await getSponsorsStore();
-  const fileMedia = await getMediaPartnersStore();
-
-  let sponsors: PartnerApiItem[] = [];
-  let mediaPartners: PartnerApiItem[] = [];
-  let usedDb = false;
-
   try {
-    const dbSponsors = await fetchSponsorsFromDB();
-    if (dbSponsors && dbSponsors.length > 0) {
-      usedDb = true;
-      sponsors = dbSponsors.map((p) => {
-        const match = fileSponsors.find((fs) => fs.id === p.id || fs.name.toLowerCase() === p.name.toLowerCase());
-        return {
-          id: p.id,
-          name: p.name,
-          logoUrl: p.logo_url,
-          type: "sponsor" as const,
-          websiteUrl: normalizePartnerWebsiteUrl(p.website_url),
-          isVisible: p.is_visible !== 0,
-          logoScale: match?.logoScale ?? 100,
-          logoPositionX: match?.logoPositionX ?? 50,
-          logoPositionY: match?.logoPositionY ?? 50,
-        };
-      });
-    }
-  } catch (error) {
-    console.error("API partners route DB sponsors read warning:", error);
-  }
+    // partners-store now handles DB-first fetching internally
+    const fileSponsors = await getSponsorsStore();
+    const fileMedia = await getMediaPartnersStore();
 
-  if (sponsors.length === 0) {
-    sponsors = fileSponsors.map((s) => ({
-      ...s,
+    const sponsors: PartnerApiItem[] = fileSponsors.map((s) => ({
+      id: s.id,
+      name: s.name,
+      logoUrl: s.logoUrl,
       type: "sponsor" as const,
       websiteUrl: normalizePartnerWebsiteUrl(s.websiteUrl),
       isVisible: s.isVisible ?? true,
+      logoScale: s.logoScale ?? 100,
+      logoPositionX: s.logoPositionX ?? 50,
+      logoPositionY: s.logoPositionY ?? 50,
     }));
-  }
 
-  try {
-    const dbMedia = await fetchMediaPartnersFromDB();
-    if (dbMedia && dbMedia.length > 0) {
-      usedDb = true;
-      mediaPartners = dbMedia.map((p) => {
-        const match = fileMedia.find((fm) => fm.id === p.id || fm.name.toLowerCase() === p.name.toLowerCase());
-        return {
-          id: p.id,
-          name: p.name,
-          logoUrl: p.logo_url,
-          type: "media_partner" as const,
-          websiteUrl: normalizePartnerWebsiteUrl(p.website_url),
-          isVisible: p.is_visible !== 0,
-          logoScale: match?.logoScale ?? 100,
-          logoPositionX: match?.logoPositionX ?? 50,
-          logoPositionY: match?.logoPositionY ?? 50,
-        };
-      });
-    }
-  } catch (error) {
-    console.error("API partners route DB media read warning:", error);
-  }
-
-  if (mediaPartners.length === 0) {
-    mediaPartners = fileMedia.map((m) => ({
-      ...m,
+    const mediaPartners: PartnerApiItem[] = fileMedia.map((m) => ({
+      id: m.id,
+      name: m.name,
+      logoUrl: m.logoUrl,
       type: "media_partner" as const,
       websiteUrl: normalizePartnerWebsiteUrl(m.websiteUrl),
       isVisible: m.isVisible ?? true,
+      logoScale: m.logoScale ?? 100,
+      logoPositionX: m.logoPositionX ?? 50,
+      logoPositionY: m.logoPositionY ?? 50,
     }));
+
+    const combined = [...sponsors, ...mediaPartners];
+
+    const resultData: PartnersApiResponse = {
+      all: includeHidden ? combined : combined.filter((item) => item.isVisible !== false),
+      sponsors: includeHidden ? sponsors : sponsors.filter((item) => item.isVisible !== false),
+      mediaPartners: includeHidden ? mediaPartners : mediaPartners.filter((item) => item.isVisible !== false),
+      source: "supabase",
+    };
+
+    partnersCache.set(cacheKey, { data: resultData, timestamp: now });
+
+    return NextResponse.json(resultData, {
+      headers: {
+        "Cache-Control": "public, s-maxage=5, stale-while-revalidate=20",
+      },
+    });
+  } catch (error) {
+    console.error("GET partners error:", error);
+    return NextResponse.json({ error: "Gagal mengambil data partner" }, { status: 500 });
   }
-
-  const combined = [...sponsors, ...mediaPartners];
-
-  resultData = {
-    all: includeHidden ? combined : combined.filter((item) => item.isVisible !== false),
-    sponsors: includeHidden ? sponsors : sponsors.filter((item) => item.isVisible !== false),
-    mediaPartners: includeHidden ? mediaPartners : mediaPartners.filter((item) => item.isVisible !== false),
-    source: usedDb ? "mysql" : "file",
-  };
-
-  partnersCache.set(cacheKey, { data: resultData, timestamp: now });
-
-  return NextResponse.json(resultData, {
-    headers: {
-      "Cache-Control": "public, s-maxage=5, stale-while-revalidate=20",
-    },
-  });
 }
 
 export async function POST(request: Request) {
@@ -164,6 +114,7 @@ export async function POST(request: Request) {
     const action = String(body.action || "create").toLowerCase();
     const normalizedWebsiteUrl = normalizePartnerWebsiteUrl(websiteUrl);
 
+    // === DELETE ACTION ===
     if (action === "delete") {
       const numId = Number(id);
       if (!numId) {
@@ -171,20 +122,27 @@ export async function POST(request: Request) {
       }
 
       if (type === "sponsor") {
-        await deleteSponsorStore(numId, name);
-        await deleteSponsorFromDB(numId, name);
-        return NextResponse.json({ success: true, message: "Sponsor berhasil dihapus" });
+        const deleted = await deleteSponsorStore(numId, name);
+        if (deleted) {
+          return NextResponse.json({ success: true, message: "Sponsor berhasil dihapus" });
+        } else {
+          return NextResponse.json({ error: "Gagal menghapus sponsor. Data mungkin sudah dihapus sebelumnya." }, { status: 404 });
+        }
       }
 
       if (type === "media_partner") {
-        await deleteMediaPartnerStore(numId, name);
-        await deleteMediaPartnerFromDB(numId, name);
-        return NextResponse.json({ success: true, message: "Media partner berhasil dihapus" });
+        const deleted = await deleteMediaPartnerStore(numId, name);
+        if (deleted) {
+          return NextResponse.json({ success: true, message: "Media partner berhasil dihapus" });
+        } else {
+          return NextResponse.json({ error: "Gagal menghapus media partner. Data mungkin sudah dihapus sebelumnya." }, { status: 404 });
+        }
       }
 
       return NextResponse.json({ error: "Tipe partner tidak valid" }, { status: 400 });
     }
 
+    // === UPDATE ACTION ===
     if (action === "update") {
       const numId = Number(id);
       if (!numId) {
@@ -204,6 +162,7 @@ export async function POST(request: Request) {
         ...(logoPositionY !== undefined && { logoPositionY: Number(logoPositionY) }),
       };
 
+      // Handle type change (e.g., sponsor → media_partner)
       if (previousType && previousType !== type) {
         const source =
           previousType === "sponsor"
@@ -214,14 +173,14 @@ export async function POST(request: Request) {
           return NextResponse.json({ error: "Partner asal tidak ditemukan" }, { status: 404 });
         }
 
+        // Delete from old type
         if (previousType === "sponsor") {
           await deleteSponsorStore(numId);
-          await deleteSponsorFromDB(numId);
         } else {
           await deleteMediaPartnerStore(numId);
-          await deleteMediaPartnerFromDB(numId);
         }
 
+        // Add to new type
         const movedData = {
           ...source,
           ...updatePayload,
@@ -235,27 +194,23 @@ export async function POST(request: Request) {
         return NextResponse.json({ success: true, partner: { ...moved, type } });
       }
 
+      // Normal update (same type)
       if (type === "sponsor") {
         const updated = await updateSponsorStore(numId, updatePayload);
-        await updateSponsorInDB(numId, {
-          name,
-          logo_url: logoUrl,
-          website_url: normalizedWebsiteUrl,
-          is_visible: isVisible !== undefined ? (isVisible ? 1 : 0) : undefined,
+        return NextResponse.json({
+          success: true,
+          partner: updated ? { ...updated, type: "sponsor" } : null,
         });
-        return NextResponse.json({ success: true, partner: updated ? { ...updated, type: "sponsor" } : null });
       }
 
       const updated = await updateMediaPartnerStore(numId, updatePayload);
-      await updateMediaPartnerInDB(numId, {
-        name,
-        logo_url: logoUrl,
-        website_url: normalizedWebsiteUrl,
-        is_visible: isVisible !== undefined ? (isVisible ? 1 : 0) : undefined,
+      return NextResponse.json({
+        success: true,
+        partner: updated ? { ...updated, type: "media_partner" } : null,
       });
-      return NextResponse.json({ success: true, partner: updated ? { ...updated, type: "media_partner" } : null });
     }
 
+    // === CREATE ACTION ===
     if (!name || !logoUrl || !type) {
       return NextResponse.json(
         { error: "Nama, Logo URL, dan Tipe wajib diisi" },
@@ -268,12 +223,6 @@ export async function POST(request: Request) {
     }
 
     if (type === "sponsor") {
-      const dbId = await insertSponsorToDB({
-        name,
-        logo_url: logoUrl,
-        website_url: normalizedWebsiteUrl,
-        is_visible: isVisible === false ? 0 : 1,
-      });
       const newSponsor = await addSponsorStore({
         name,
         logoUrl,
@@ -282,15 +231,9 @@ export async function POST(request: Request) {
         logoScale: logoScale ?? 100,
         logoPositionX: logoPositionX ?? 50,
         logoPositionY: logoPositionY ?? 50,
-      }, dbId || undefined);
+      });
       return NextResponse.json({ success: true, partner: { ...newSponsor, type: "sponsor" } }, { status: 201 });
     } else {
-      const dbId = await insertMediaPartnerToDB({
-        name,
-        logo_url: logoUrl,
-        website_url: normalizedWebsiteUrl,
-        is_visible: isVisible === false ? 0 : 1,
-      });
       const newMedia = await addMediaPartnerStore({
         name,
         logoUrl,
@@ -299,7 +242,7 @@ export async function POST(request: Request) {
         logoScale: logoScale ?? 100,
         logoPositionX: logoPositionX ?? 50,
         logoPositionY: logoPositionY ?? 50,
-      }, dbId || undefined);
+      });
       return NextResponse.json({ success: true, partner: { ...newMedia, type: "media_partner" } }, { status: 201 });
     }
   } catch (error) {
@@ -328,12 +271,6 @@ export async function PUT(request: Request) {
         ...(websiteUrl !== undefined && { websiteUrl: normalizedWebsiteUrl }),
         ...(isVisible !== undefined && { isVisible }),
       });
-      await updateSponsorInDB(numId, {
-        name,
-        logo_url: logoUrl,
-        website_url: normalizedWebsiteUrl,
-        is_visible: isVisible !== undefined ? (isVisible ? 1 : 0) : undefined,
-      });
       return NextResponse.json({ success: true, partner: updated ? { ...updated, type: "sponsor" } : null });
     } else if (type === "media_partner") {
       const updated = await updateMediaPartnerStore(numId, {
@@ -342,14 +279,9 @@ export async function PUT(request: Request) {
         ...(websiteUrl !== undefined && { websiteUrl: normalizedWebsiteUrl }),
         ...(isVisible !== undefined && { isVisible }),
       });
-      await updateMediaPartnerInDB(numId, {
-        name,
-        logo_url: logoUrl,
-        website_url: normalizedWebsiteUrl,
-        is_visible: isVisible !== undefined ? (isVisible ? 1 : 0) : undefined,
-      });
       return NextResponse.json({ success: true, partner: updated ? { ...updated, type: "media_partner" } : null });
     } else {
+      // Try both
       let updated = await updateSponsorStore(numId, {
         name,
         logoUrl,
@@ -357,12 +289,6 @@ export async function PUT(request: Request) {
         ...(isVisible !== undefined && { isVisible }),
       });
       if (updated) {
-        await updateSponsorInDB(numId, {
-          name,
-          logo_url: logoUrl,
-          website_url: normalizedWebsiteUrl,
-          is_visible: isVisible !== undefined ? (isVisible ? 1 : 0) : undefined,
-        });
         return NextResponse.json({ success: true, partner: { ...updated, type: "sponsor" } });
       }
 
@@ -373,12 +299,6 @@ export async function PUT(request: Request) {
         ...(isVisible !== undefined && { isVisible }),
       });
       if (updated) {
-        await updateMediaPartnerInDB(numId, {
-          name,
-          logo_url: logoUrl,
-          website_url: normalizedWebsiteUrl,
-          is_visible: isVisible !== undefined ? (isVisible ? 1 : 0) : undefined,
-        });
         return NextResponse.json({ success: true, partner: { ...updated, type: "media_partner" } });
       }
 
@@ -404,18 +324,20 @@ export async function DELETE(request: Request) {
     const id = Number(idParam);
 
     if (typeParam === "sponsor") {
-      await deleteSponsorStore(id);
-      await deleteSponsorFromDB(id);
-      return NextResponse.json({ success: true, message: "Sponsor berhasil dihapus" });
+      const deleted = await deleteSponsorStore(id);
+      if (deleted) {
+        return NextResponse.json({ success: true, message: "Sponsor berhasil dihapus" });
+      }
+      return NextResponse.json({ error: "Sponsor tidak ditemukan atau sudah dihapus" }, { status: 404 });
     } else if (typeParam === "media_partner") {
-      await deleteMediaPartnerStore(id);
-      await deleteMediaPartnerFromDB(id);
-      return NextResponse.json({ success: true, message: "Media partner berhasil dihapus" });
+      const deleted = await deleteMediaPartnerStore(id);
+      if (deleted) {
+        return NextResponse.json({ success: true, message: "Media partner berhasil dihapus" });
+      }
+      return NextResponse.json({ error: "Media partner tidak ditemukan atau sudah dihapus" }, { status: 404 });
     } else {
       const deletedSponsor = await deleteSponsorStore(id);
-      await deleteSponsorFromDB(id);
       const deletedMedia = await deleteMediaPartnerStore(id);
-      await deleteMediaPartnerFromDB(id);
 
       if (!deletedSponsor && !deletedMedia) {
         return NextResponse.json(

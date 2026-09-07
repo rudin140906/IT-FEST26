@@ -3,18 +3,11 @@ import { invalidatePartnersCache } from "@/app/api/partners/route";
 import { invalidateSponsorsCache } from "@/app/api/sponsors/route";
 import { invalidateMediaPartnersCache } from "@/app/api/media-partners/route";
 import {
-  fetchSponsorsFromDB,
-  fetchMediaPartnersFromDB,
-  updateSponsorInDB,
-  updateMediaPartnerInDB,
-} from "@/lib/db";
-import {
   getSponsorsStore,
   getMediaPartnersStore,
   updateSponsorStore,
   updateMediaPartnerStore,
 } from "@/lib/partners-store";
-import { normalizePartnerWebsiteUrl } from "@/lib/partner-url";
 
 type PartnerType = "sponsor" | "media_partner";
 
@@ -38,48 +31,47 @@ export async function PATCH(request: Request) {
     invalidateMediaPartnersCache();
 
     if (type === "sponsor") {
-      const dbSponsors = await fetchSponsorsFromDB();
-      const dbItem = dbSponsors?.find((item) => item.id === id);
-      const fileItem = (await getSponsorsStore()).find((item) => item.id === id);
-      const currentVisible = dbItem ? dbItem.is_visible !== 0 : fileItem ? fileItem.isVisible ?? true : true;
-      const nextVisible = isVisible ?? !currentVisible;
+      const sponsors = await getSponsorsStore();
+      const item = sponsors.find((s) => s.id === id);
 
-      const dbUpdated = await updateSponsorInDB(id, { is_visible: nextVisible ? 1 : 0 });
-      const fileUpdated = await updateSponsorStore(id, { isVisible: nextVisible });
-
-      if (!dbItem && !fileItem) {
+      if (!item) {
         return NextResponse.json({ error: "Sponsor tidak ditemukan" }, { status: 404 });
       }
 
-      const partner = dbItem
-        ? { id: dbItem.id, name: dbItem.name, logoUrl: dbItem.logo_url, type: "sponsor" as const, websiteUrl: normalizePartnerWebsiteUrl(dbItem.website_url), isVisible: nextVisible }
-        : fileUpdated
-          ? { ...fileUpdated, type: "sponsor" as const }
-          : { id, type: "sponsor" as const, isVisible: nextVisible };
+      const currentVisible = item.isVisible ?? true;
+      const nextVisible = isVisible ?? !currentVisible;
 
-      return NextResponse.json({ success: true, partner, dbUpdated, fileUpdated: Boolean(fileUpdated) });
+      // updateSponsorStore handles DB update internally
+      const updated = await updateSponsorStore(id, { isVisible: nextVisible });
+
+      return NextResponse.json({
+        success: true,
+        partner: updated
+          ? { ...updated, type: "sponsor" as const }
+          : { id, type: "sponsor" as const, isVisible: nextVisible },
+      });
     }
 
-    const dbMediaPartners = await fetchMediaPartnersFromDB();
-    const dbItem = dbMediaPartners?.find((item) => item.id === id);
-    const fileItem = (await getMediaPartnersStore()).find((item) => item.id === id);
-    const currentVisible = dbItem ? dbItem.is_visible !== 0 : fileItem ? fileItem.isVisible ?? true : true;
-    const nextVisible = isVisible ?? !currentVisible;
+    // Media partner
+    const mediaPartners = await getMediaPartnersStore();
+    const item = mediaPartners.find((m) => m.id === id);
 
-    const dbUpdated = await updateMediaPartnerInDB(id, { is_visible: nextVisible ? 1 : 0 });
-    const fileUpdated = await updateMediaPartnerStore(id, { isVisible: nextVisible });
-
-    if (!dbItem && !fileItem) {
+    if (!item) {
       return NextResponse.json({ error: "Media partner tidak ditemukan" }, { status: 404 });
     }
 
-    const partner = dbItem
-      ? { id: dbItem.id, name: dbItem.name, logoUrl: dbItem.logo_url, type: "media_partner" as const, websiteUrl: normalizePartnerWebsiteUrl(dbItem.website_url), isVisible: nextVisible }
-      : fileUpdated
-        ? { ...fileUpdated, type: "media_partner" as const }
-        : { id, type: "media_partner" as const, isVisible: nextVisible };
+    const currentVisible = item.isVisible ?? true;
+    const nextVisible = isVisible ?? !currentVisible;
 
-    return NextResponse.json({ success: true, partner, dbUpdated, fileUpdated: Boolean(fileUpdated) });
+    // updateMediaPartnerStore handles DB update internally
+    const updated = await updateMediaPartnerStore(id, { isVisible: nextVisible });
+
+    return NextResponse.json({
+      success: true,
+      partner: updated
+        ? { ...updated, type: "media_partner" as const }
+        : { id, type: "media_partner" as const, isVisible: nextVisible },
+    });
   } catch (error) {
     console.error("PATCH partner visibility error:", error);
     return NextResponse.json({ error: "Gagal memperbarui visibilitas partner" }, { status: 500 });

@@ -2,12 +2,6 @@ import { NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
 import {
-  fetchSponsorsFromDB,
-  insertSponsorToDB,
-  updateSponsorInDB,
-  deleteSponsorFromDB,
-} from "@/lib/db";
-import {
   getSponsorsStore,
   addSponsorStore,
   updateSponsorStore,
@@ -26,7 +20,7 @@ type SponsorApiItem = {
 
 type SponsorsApiResponse = {
   sponsors: SponsorApiItem[];
-  source: "mysql" | "file";
+  source: "supabase" | "file";
 };
 
 let cachedSponsorsData: { data: SponsorsApiResponse; timestamp: number } | null = null;
@@ -46,38 +40,32 @@ export async function GET() {
     });
   }
 
-  let sponsorsList = null;
-  let source: "mysql" | "file" = "file";
-
   try {
-    const dbSponsors = await fetchSponsorsFromDB();
-    if (dbSponsors && dbSponsors.length > 0) {
-      sponsorsList = dbSponsors.map((s) => ({
+    // getSponsorsStore handles DB-first fetching internally
+    const sponsors = await getSponsorsStore();
+    const sponsorsList = sponsors
+      .filter((s) => s.isVisible !== false)
+      .map((s) => ({
         id: s.id,
         name: s.name,
-        logoUrl: s.logo_url,
-        websiteUrl: normalizePartnerWebsiteUrl(s.website_url),
-        createdAt: s.created_at,
-        isVisible: s.is_visible !== 0,
-      })).filter((s) => s.isVisible !== false);
-      source = "mysql";
-    }
+        logoUrl: s.logoUrl,
+        websiteUrl: normalizePartnerWebsiteUrl(s.websiteUrl),
+        createdAt: s.createdAt,
+        isVisible: s.isVisible ?? true,
+      }));
+
+    const result: SponsorsApiResponse = { sponsors: sponsorsList, source: "supabase" };
+    cachedSponsorsData = { data: result, timestamp: now };
+
+    return NextResponse.json(result, {
+      headers: {
+        "Cache-Control": "public, s-maxage=5, stale-while-revalidate=20",
+      },
+    });
   } catch (error) {
-    console.error("API sponsors route DB read warning:", error);
+    console.error("GET sponsors error:", error);
+    return NextResponse.json({ error: "Gagal mengambil data sponsor" }, { status: 500 });
   }
-
-  if (!sponsorsList) {
-    sponsorsList = await getSponsorsStore();
-  }
-
-  const result = { sponsors: sponsorsList, source };
-  cachedSponsorsData = { data: result, timestamp: now };
-
-  return NextResponse.json(result, {
-    headers: {
-      "Cache-Control": "public, s-maxage=5, stale-while-revalidate=20",
-    },
-  });
 }
 
 export async function POST(request: Request) {
@@ -94,18 +82,12 @@ export async function POST(request: Request) {
       );
     }
 
+    // addSponsorStore handles DB insert internally
     const newSponsor = await addSponsorStore({
       name,
       logoUrl,
       websiteUrl: normalizedWebsiteUrl,
       isVisible: isVisible ?? true,
-    });
-
-    await insertSponsorToDB({
-      name,
-      logo_url: logoUrl,
-      website_url: normalizedWebsiteUrl,
-      is_visible: isVisible === false ? 0 : 1,
     });
 
     return NextResponse.json({ success: true, sponsor: newSponsor }, { status: 201 });
@@ -126,6 +108,7 @@ export async function PUT(request: Request) {
       return NextResponse.json({ error: "ID sponsor wajib disertakan" }, { status: 400 });
     }
 
+    // updateSponsorStore handles DB update internally
     const updatedSponsor = await updateSponsorStore(Number(id), {
       ...(name && { name }),
       ...(logoUrl && { logoUrl }),
@@ -136,13 +119,6 @@ export async function PUT(request: Request) {
     if (!updatedSponsor) {
       return NextResponse.json({ error: "Sponsor tidak ditemukan" }, { status: 404 });
     }
-
-    await updateSponsorInDB(Number(id), {
-      name,
-      logo_url: logoUrl,
-      website_url: normalizedWebsiteUrl,
-      is_visible: isVisible !== undefined ? (isVisible ? 1 : 0) : undefined,
-    });
 
     return NextResponse.json({ success: true, sponsor: updatedSponsor });
   } catch (error) {
@@ -161,9 +137,8 @@ export async function DELETE(request: Request) {
       return NextResponse.json({ error: "ID sponsor wajib disertakan" }, { status: 400 });
     }
 
-    const id = Number(idParam);
-    const deleted = await deleteSponsorStore(id);
-    await deleteSponsorFromDB(id);
+    // deleteSponsorStore handles DB delete internally
+    const deleted = await deleteSponsorStore(Number(idParam));
 
     if (!deleted) {
       return NextResponse.json(

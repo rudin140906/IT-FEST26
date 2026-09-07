@@ -1,6 +1,16 @@
 import fs from "fs/promises";
 import path from "path";
 import { fallbackSponsors, fallbackMediaPartners } from "@/data/sponsors";
+import {
+  fetchSponsorsFromDB,
+  fetchMediaPartnersFromDB,
+  insertSponsorToDB,
+  insertMediaPartnerToDB,
+  updateSponsorInDB,
+  updateMediaPartnerInDB,
+  deleteSponsorFromDB,
+  deleteMediaPartnerFromDB,
+} from "@/lib/db";
 
 const DATA_DIR = path.join(process.cwd(), "data");
 const SPONSORS_FILE = path.join(DATA_DIR, "sponsors.json");
@@ -22,8 +32,8 @@ export interface PartnerItem extends BaseItem {
   type: "sponsor" | "media_partner";
 }
 
-// Helper to read JSON file with fallback
-async function readJsonFile<T>(filePath: string, fallback: T): Promise<T> {
+// Helper to read JSON file
+async function readJsonFile<T>(filePath: string): Promise<T | null> {
   try {
     const fileData = await fs.readFile(filePath, "utf-8");
     const parsed = JSON.parse(fileData);
@@ -33,14 +43,7 @@ async function readJsonFile<T>(filePath: string, fallback: T): Promise<T> {
   } catch {
     // File doesn't exist or is invalid
   }
-  return fallback;
-}
-
-function normalizeVisibility<T extends { isVisible?: boolean }>(item: T): T {
-  return {
-    ...item,
-    isVisible: item.isVisible ?? true,
-  };
+  return null;
 }
 
 // Helper to write JSON file
@@ -55,10 +58,77 @@ async function writeJsonFile(filePath: string, data: unknown): Promise<boolean> 
   }
 }
 
+// Read extra fields (logoScale, logoPositionX, logoPositionY) from JSON cache
+// These fields don't exist in the Supabase schema
+async function readExtraFieldsMap(filePath: string): Promise<Map<string, { logoScale?: number; logoPositionX?: number; logoPositionY?: number }>> {
+  const map = new Map<string, { logoScale?: number; logoPositionX?: number; logoPositionY?: number }>();
+  const items = await readJsonFile<BaseItem[]>(filePath);
+  if (items) {
+    for (const item of items) {
+      // Key by both ID and name (lowercased) for flexible matching
+      map.set(`id:${item.id}`, {
+        logoScale: item.logoScale ?? 100,
+        logoPositionX: item.logoPositionX ?? 50,
+        logoPositionY: item.logoPositionY ?? 50,
+      });
+      if (item.name) {
+        map.set(`name:${item.name.toLowerCase()}`, {
+          logoScale: item.logoScale ?? 100,
+          logoPositionX: item.logoPositionX ?? 50,
+          logoPositionY: item.logoPositionY ?? 50,
+        });
+      }
+    }
+  }
+  return map;
+}
+
 // ===================================================
-// SPONSORS LOCAL FILE STORE
+// SPONSORS STORE
 // ===================================================
 export async function getSponsorsStore(): Promise<BaseItem[]> {
+  // 1. Try Supabase Database first (source of truth)
+  try {
+    const dbSponsors = await fetchSponsorsFromDB();
+    if (dbSponsors && dbSponsors.length > 0) {
+      const extraFields = await readExtraFieldsMap(SPONSORS_FILE);
+
+      const items: BaseItem[] = dbSponsors.map((s) => {
+        const byId = extraFields.get(`id:${s.id}`);
+        const byName = extraFields.get(`name:${s.name.toLowerCase()}`);
+        const extra = byId || byName || { logoScale: 100, logoPositionX: 50, logoPositionY: 50 };
+
+        return {
+          id: s.id,
+          name: s.name,
+          logoUrl: s.logo_url,
+          websiteUrl: s.website_url || "",
+          isVisible: s.is_visible !== 0,
+          createdAt: s.created_at,
+          logoScale: extra.logoScale ?? 100,
+          logoPositionX: extra.logoPositionX ?? 50,
+          logoPositionY: extra.logoPositionY ?? 50,
+        };
+      });
+
+      // Sync JSON cache with DB data (so IDs stay consistent)
+      await writeJsonFile(SPONSORS_FILE, items);
+      return items;
+    }
+  } catch (err) {
+    console.warn("Error fetching sponsors from DB, using fallback:", err);
+  }
+
+  // 2. Fallback to file JSON store
+  const fileData = await readJsonFile<BaseItem[]>(SPONSORS_FILE);
+  if (fileData) {
+    return fileData.map((item) => ({
+      ...item,
+      isVisible: item.isVisible ?? true,
+    }));
+  }
+
+  // 3. First time: create from hardcoded defaults
   const defaultSponsors: BaseItem[] = fallbackSponsors.map((s) => ({
     id: s.id,
     name: s.name,
@@ -68,34 +138,60 @@ export async function getSponsorsStore(): Promise<BaseItem[]> {
     logoPositionX: s.logoPositionX ?? 50,
     logoPositionY: s.logoPositionY ?? 50,
   }));
-
-  const data = await readJsonFile<BaseItem[]>(SPONSORS_FILE, defaultSponsors);
-  if (data === defaultSponsors) {
-    await writeJsonFile(SPONSORS_FILE, defaultSponsors);
-  }
-  return data.map((item) => normalizeVisibility(item));
+  await writeJsonFile(SPONSORS_FILE, defaultSponsors);
+  return defaultSponsors;
 }
 
 export async function addSponsorStore(sponsor: Omit<BaseItem, "id">, explicitId?: number): Promise<BaseItem> {
-  const current = await getSponsorsStore();
-  const maxId = current.reduce((max, item) => (item.id > max ? item.id : max), 0);
+  // 1. Insert to Supabase first to get the real DB ID
+  let dbId: number | null = null;
+  try {
+    dbId = await insertSponsorToDB({
+      name: sponsor.name,
+      logo_url: sponsor.logoUrl,
+      website_url: sponsor.websiteUrl || undefined,
+      is_visible: sponsor.isVisible === false ? 0 : 1,
+    });
+  } catch (err) {
+    console.warn("Failed to insert sponsor to DB:", err);
+  }
+
+  const finalId = dbId || explicitId || Date.now();
+
   const newSponsor: BaseItem = {
     ...sponsor,
-    id: explicitId || maxId + 1,
+    id: finalId,
     createdAt: new Date().toISOString(),
     isVisible: sponsor.isVisible ?? true,
   };
 
-  const updated = [newSponsor, ...current];
+  // 2. Update local JSON cache
+  const current = await getSponsorsStore();
+  const updated = [newSponsor, ...current.filter((s) => s.id !== finalId)];
   await writeJsonFile(SPONSORS_FILE, updated);
+
   return newSponsor;
 }
 
 export async function updateSponsorStore(id: number, data: Partial<BaseItem>): Promise<BaseItem | null> {
+  // 1. Update Supabase first
+  try {
+    await updateSponsorInDB(id, {
+      name: data.name,
+      logo_url: data.logoUrl,
+      website_url: data.websiteUrl,
+      is_visible: data.isVisible !== undefined ? (data.isVisible ? 1 : 0) : undefined,
+    });
+  } catch (err) {
+    console.warn("Failed to update sponsor in DB:", err);
+  }
+
+  // 2. Update local JSON cache
   const current = await getSponsorsStore();
   const index = current.findIndex((item) => item.id === id);
 
   if (index === -1) {
+    // Item doesn't exist locally, create it
     const fallbackItem: BaseItem = {
       id,
       name: data.name || "Sponsor",
@@ -125,6 +221,15 @@ export async function updateSponsorStore(id: number, data: Partial<BaseItem>): P
 }
 
 export async function deleteSponsorStore(id: number, name?: string): Promise<boolean> {
+  // 1. Delete from Supabase first
+  let dbDeleted = false;
+  try {
+    dbDeleted = await deleteSponsorFromDB(id, name);
+  } catch (err) {
+    console.warn("Failed to delete sponsor from DB:", err);
+  }
+
+  // 2. Delete from local JSON cache
   const current = await getSponsorsStore();
   const filtered = current.filter((item) => {
     if (item.id === id) return false;
@@ -132,16 +237,60 @@ export async function deleteSponsorStore(id: number, name?: string): Promise<boo
     return true;
   });
 
-  if (filtered.length === current.length) return false;
+  const fileDeleted = filtered.length !== current.length;
+  if (fileDeleted) {
+    await writeJsonFile(SPONSORS_FILE, filtered);
+  }
 
-  await writeJsonFile(SPONSORS_FILE, filtered);
-  return true;
+  return dbDeleted || fileDeleted;
 }
 
 // ===================================================
-// MEDIA PARTNERS LOCAL FILE STORE
+// MEDIA PARTNERS STORE
 // ===================================================
 export async function getMediaPartnersStore(): Promise<BaseItem[]> {
+  // 1. Try Supabase Database first (source of truth)
+  try {
+    const dbMedia = await fetchMediaPartnersFromDB();
+    if (dbMedia && dbMedia.length > 0) {
+      const extraFields = await readExtraFieldsMap(MEDIA_PARTNERS_FILE);
+
+      const items: BaseItem[] = dbMedia.map((m) => {
+        const byId = extraFields.get(`id:${m.id}`);
+        const byName = extraFields.get(`name:${m.name.toLowerCase()}`);
+        const extra = byId || byName || { logoScale: 100, logoPositionX: 50, logoPositionY: 50 };
+
+        return {
+          id: m.id,
+          name: m.name,
+          logoUrl: m.logo_url,
+          websiteUrl: m.website_url || "",
+          isVisible: m.is_visible !== 0,
+          createdAt: m.created_at,
+          logoScale: extra.logoScale ?? 100,
+          logoPositionX: extra.logoPositionX ?? 50,
+          logoPositionY: extra.logoPositionY ?? 50,
+        };
+      });
+
+      // Sync JSON cache with DB data
+      await writeJsonFile(MEDIA_PARTNERS_FILE, items);
+      return items;
+    }
+  } catch (err) {
+    console.warn("Error fetching media partners from DB, using fallback:", err);
+  }
+
+  // 2. Fallback to file JSON store
+  const fileData = await readJsonFile<BaseItem[]>(MEDIA_PARTNERS_FILE);
+  if (fileData) {
+    return fileData.map((item) => ({
+      ...item,
+      isVisible: item.isVisible ?? true,
+    }));
+  }
+
+  // 3. First time: create from hardcoded defaults
   const defaultMediaPartners: BaseItem[] = fallbackMediaPartners.map((m) => ({
     id: m.id,
     name: m.name,
@@ -151,30 +300,55 @@ export async function getMediaPartnersStore(): Promise<BaseItem[]> {
     logoPositionX: m.logoPositionX ?? 50,
     logoPositionY: m.logoPositionY ?? 50,
   }));
-
-  const data = await readJsonFile<BaseItem[]>(MEDIA_PARTNERS_FILE, defaultMediaPartners);
-  if (data === defaultMediaPartners) {
-    await writeJsonFile(MEDIA_PARTNERS_FILE, defaultMediaPartners);
-  }
-  return data.map((item) => normalizeVisibility(item));
+  await writeJsonFile(MEDIA_PARTNERS_FILE, defaultMediaPartners);
+  return defaultMediaPartners;
 }
 
 export async function addMediaPartnerStore(partner: Omit<BaseItem, "id">, explicitId?: number): Promise<BaseItem> {
-  const current = await getMediaPartnersStore();
-  const maxId = current.reduce((max, item) => (item.id > max ? item.id : max), 0);
+  // 1. Insert to Supabase first
+  let dbId: number | null = null;
+  try {
+    dbId = await insertMediaPartnerToDB({
+      name: partner.name,
+      logo_url: partner.logoUrl,
+      website_url: partner.websiteUrl || undefined,
+      is_visible: partner.isVisible === false ? 0 : 1,
+    });
+  } catch (err) {
+    console.warn("Failed to insert media partner to DB:", err);
+  }
+
+  const finalId = dbId || explicitId || Date.now();
+
   const newMediaPartner: BaseItem = {
     ...partner,
-    id: explicitId || maxId + 1,
+    id: finalId,
     createdAt: new Date().toISOString(),
     isVisible: partner.isVisible ?? true,
   };
 
-  const updated = [newMediaPartner, ...current];
+  // 2. Update local JSON cache
+  const current = await getMediaPartnersStore();
+  const updated = [newMediaPartner, ...current.filter((m) => m.id !== finalId)];
   await writeJsonFile(MEDIA_PARTNERS_FILE, updated);
+
   return newMediaPartner;
 }
 
 export async function updateMediaPartnerStore(id: number, data: Partial<BaseItem>): Promise<BaseItem | null> {
+  // 1. Update Supabase first
+  try {
+    await updateMediaPartnerInDB(id, {
+      name: data.name,
+      logo_url: data.logoUrl,
+      website_url: data.websiteUrl,
+      is_visible: data.isVisible !== undefined ? (data.isVisible ? 1 : 0) : undefined,
+    });
+  } catch (err) {
+    console.warn("Failed to update media partner in DB:", err);
+  }
+
+  // 2. Update local JSON cache
   const current = await getMediaPartnersStore();
   const index = current.findIndex((item) => item.id === id);
 
@@ -208,6 +382,15 @@ export async function updateMediaPartnerStore(id: number, data: Partial<BaseItem
 }
 
 export async function deleteMediaPartnerStore(id: number, name?: string): Promise<boolean> {
+  // 1. Delete from Supabase first
+  let dbDeleted = false;
+  try {
+    dbDeleted = await deleteMediaPartnerFromDB(id, name);
+  } catch (err) {
+    console.warn("Failed to delete media partner from DB:", err);
+  }
+
+  // 2. Delete from local JSON cache
   const current = await getMediaPartnersStore();
   const filtered = current.filter((item) => {
     if (item.id === id) return false;
@@ -215,10 +398,12 @@ export async function deleteMediaPartnerStore(id: number, name?: string): Promis
     return true;
   });
 
-  if (filtered.length === current.length) return false;
+  const fileDeleted = filtered.length !== current.length;
+  if (fileDeleted) {
+    await writeJsonFile(MEDIA_PARTNERS_FILE, filtered);
+  }
 
-  await writeJsonFile(MEDIA_PARTNERS_FILE, filtered);
-  return true;
+  return dbDeleted || fileDeleted;
 }
 
 // ===================================================

@@ -13,9 +13,9 @@ const DATA_DIR = path.join(process.cwd(), "data");
 const FILE_PATH = path.join(DATA_DIR, "timeline.json");
 
 export async function getTimelineStore(): Promise<TimelineItem[]> {
-  // 1. Try MySQL Database first
+  // 1. Try Supabase Database first
   const dbTimeline = await fetchTimelineFromDB();
-  if (dbTimeline && dbTimeline.length > 0) {
+  if (dbTimeline !== null) {
     return dbTimeline.map((item: TimelineDBItem) => ({
       id: item.id,
       title: item.title,
@@ -38,12 +38,10 @@ export async function getTimelineStore(): Promise<TimelineItem[]> {
       // File doesn't exist yet
     }
 
-    const initialData: TimelineItem[] = timelineData.map((t) => ({ ...t }));
-    await saveTimelineStore(initialData);
-    return initialData;
+    return [];
   } catch (error) {
     console.error("Error reading timeline store:", error);
-    return timelineData.map((t) => ({ ...t }));
+    return [];
   }
 }
 

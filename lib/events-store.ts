@@ -59,11 +59,11 @@ async function writeEventsFile(data: EventStoreItem[]): Promise<boolean> {
   }
 }
 
-// Get all events (try MySQL first, fallback to JSON store)
+// Get all events (try Supabase first, fallback to JSON store)
 export async function getEventsStore(): Promise<EventStoreItem[]> {
-  // 1. Try MySQL Database
+  // 1. Try Supabase Database
   const dbEvents = await fetchEventsFromDB();
-  if (dbEvents && dbEvents.length > 0) {
+  if (dbEvents !== null) {
     return dbEvents.map((e: EventDBItem) => ({
       id: e.id,
       title: e.title,

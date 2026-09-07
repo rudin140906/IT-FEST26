@@ -32,7 +32,12 @@ export interface PartnerItem extends BaseItem {
   type: "sponsor" | "media_partner";
 }
 
-// Helper to read JSON file
+// In-memory cache for extra fields (logoScale, logoPositionX, logoPositionY)
+// that don't exist in the Supabase schema. This works on Vercel where filesystem is read-only.
+const sponsorExtraFieldsCache = new Map<string, { logoScale?: number; logoPositionX?: number; logoPositionY?: number }>();
+const mediaPartnerExtraFieldsCache = new Map<string, { logoScale?: number; logoPositionX?: number; logoPositionY?: number }>();
+
+// Helper to try reading JSON file (best-effort, works locally, may fail on Vercel)
 async function readJsonFile<T>(filePath: string): Promise<T | null> {
   try {
     const fileData = await fs.readFile(filePath, "utf-8");
@@ -41,38 +46,37 @@ async function readJsonFile<T>(filePath: string): Promise<T | null> {
       return parsed as T;
     }
   } catch {
-    // File doesn't exist or is invalid
+    // File doesn't exist or is invalid (e.g., Vercel read-only fs)
   }
   return null;
 }
 
-// Helper to write JSON file
+// Helper to try writing JSON file (best-effort, silently fails on Vercel)
 async function writeJsonFile(filePath: string, data: unknown): Promise<boolean> {
   try {
     await fs.mkdir(DATA_DIR, { recursive: true });
     await fs.writeFile(filePath, JSON.stringify(data, null, 2), "utf-8");
     return true;
-  } catch (error) {
-    console.error(`Error writing to ${filePath}:`, error);
+  } catch {
+    // Silently fail on Vercel where filesystem is read-only
     return false;
   }
 }
 
-// Read extra fields (logoScale, logoPositionX, logoPositionY) from JSON cache
-// These fields don't exist in the Supabase schema
-async function readExtraFieldsMap(filePath: string): Promise<Map<string, { logoScale?: number; logoPositionX?: number; logoPositionY?: number }>> {
-  const map = new Map<string, { logoScale?: number; logoPositionX?: number; logoPositionY?: number }>();
+// Load extra fields from JSON file into in-memory cache (one-time bootstrap)
+async function loadExtraFieldsToCache(filePath: string, cache: Map<string, { logoScale?: number; logoPositionX?: number; logoPositionY?: number }>) {
+  if (cache.size > 0) return; // Already loaded
   const items = await readJsonFile<BaseItem[]>(filePath);
   if (items) {
     for (const item of items) {
-      // Key by both ID and name (lowercased) for flexible matching
-      map.set(`id:${item.id}`, {
+      const key = `id:${item.id}`;
+      cache.set(key, {
         logoScale: item.logoScale ?? 100,
         logoPositionX: item.logoPositionX ?? 50,
         logoPositionY: item.logoPositionY ?? 50,
       });
       if (item.name) {
-        map.set(`name:${item.name.toLowerCase()}`, {
+        cache.set(`name:${item.name.toLowerCase()}`, {
           logoScale: item.logoScale ?? 100,
           logoPositionX: item.logoPositionX ?? 50,
           logoPositionY: item.logoPositionY ?? 50,
@@ -80,24 +84,32 @@ async function readExtraFieldsMap(filePath: string): Promise<Map<string, { logoS
       }
     }
   }
-  return map;
+}
+
+function getExtraFields(cache: Map<string, { logoScale?: number; logoPositionX?: number; logoPositionY?: number }>, id: number, name: string) {
+  const byId = cache.get(`id:${id}`);
+  const byName = cache.get(`name:${name.toLowerCase()}`);
+  return byId || byName || { logoScale: 100, logoPositionX: 50, logoPositionY: 50 };
+}
+
+function setExtraFields(cache: Map<string, { logoScale?: number; logoPositionX?: number; logoPositionY?: number }>, id: number, name: string, data: { logoScale?: number; logoPositionX?: number; logoPositionY?: number }) {
+  cache.set(`id:${id}`, data);
+  if (name) cache.set(`name:${name.toLowerCase()}`, data);
 }
 
 // ===================================================
-// SPONSORS STORE
+// SPONSORS STORE — Supabase as source of truth
 // ===================================================
 export async function getSponsorsStore(): Promise<BaseItem[]> {
+  // Load extra fields from JSON into memory cache (one-time)
+  await loadExtraFieldsToCache(SPONSORS_FILE, sponsorExtraFieldsCache);
+
   // 1. Try Supabase Database first (source of truth)
   try {
     const dbSponsors = await fetchSponsorsFromDB();
-    if (dbSponsors && dbSponsors.length > 0) {
-      const extraFields = await readExtraFieldsMap(SPONSORS_FILE);
-
+    if (dbSponsors !== null) {
       const items: BaseItem[] = dbSponsors.map((s) => {
-        const byId = extraFields.get(`id:${s.id}`);
-        const byName = extraFields.get(`name:${s.name.toLowerCase()}`);
-        const extra = byId || byName || { logoScale: 100, logoPositionX: 50, logoPositionY: 50 };
-
+        const extra = getExtraFields(sponsorExtraFieldsCache, s.id, s.name);
         return {
           id: s.id,
           name: s.name,
@@ -111,15 +123,15 @@ export async function getSponsorsStore(): Promise<BaseItem[]> {
         };
       });
 
-      // Sync JSON cache with DB data (so IDs stay consistent)
-      await writeJsonFile(SPONSORS_FILE, items);
+      // Best-effort: sync JSON cache (works locally, silently fails on Vercel)
+      writeJsonFile(SPONSORS_FILE, items);
       return items;
     }
   } catch (err) {
     console.warn("Error fetching sponsors from DB, using fallback:", err);
   }
 
-  // 2. Fallback to file JSON store
+  // 2. Fallback to file JSON store (local dev only, if Supabase is offline)
   const fileData = await readJsonFile<BaseItem[]>(SPONSORS_FILE);
   if (fileData) {
     return fileData.map((item) => ({
@@ -128,18 +140,8 @@ export async function getSponsorsStore(): Promise<BaseItem[]> {
     }));
   }
 
-  // 3. First time: create from hardcoded defaults
-  const defaultSponsors: BaseItem[] = fallbackSponsors.map((s) => ({
-    id: s.id,
-    name: s.name,
-    logoUrl: s.logoUrl,
-    isVisible: s.isVisible ?? true,
-    logoScale: s.logoScale ?? 100,
-    logoPositionX: s.logoPositionX ?? 50,
-    logoPositionY: s.logoPositionY ?? 50,
-  }));
-  await writeJsonFile(SPONSORS_FILE, defaultSponsors);
-  return defaultSponsors;
+  // 3. If DB connection failed and no file exists, return empty array
+  return [];
 }
 
 export async function addSponsorStore(sponsor: Omit<BaseItem, "id">, explicitId?: number): Promise<BaseItem> {
@@ -165,18 +167,28 @@ export async function addSponsorStore(sponsor: Omit<BaseItem, "id">, explicitId?
     isVisible: sponsor.isVisible ?? true,
   };
 
-  // 2. Update local JSON cache
-  const current = await getSponsorsStore();
-  const updated = [newSponsor, ...current.filter((s) => s.id !== finalId)];
-  await writeJsonFile(SPONSORS_FILE, updated);
+  // Save extra fields to in-memory cache
+  setExtraFields(sponsorExtraFieldsCache, finalId, sponsor.name, {
+    logoScale: sponsor.logoScale ?? 100,
+    logoPositionX: sponsor.logoPositionX ?? 50,
+    logoPositionY: sponsor.logoPositionY ?? 50,
+  });
+
+  // Best-effort: update file cache
+  try {
+    const current = await getSponsorsStore();
+    const updated = [newSponsor, ...current.filter((s) => s.id !== finalId)];
+    writeJsonFile(SPONSORS_FILE, updated);
+  } catch { /* Silently fail on Vercel */ }
 
   return newSponsor;
 }
 
 export async function updateSponsorStore(id: number, data: Partial<BaseItem>): Promise<BaseItem | null> {
   // 1. Update Supabase first
+  let dbSuccess = false;
   try {
-    await updateSponsorInDB(id, {
+    dbSuccess = await updateSponsorInDB(id, {
       name: data.name,
       logo_url: data.logoUrl,
       website_url: data.websiteUrl,
@@ -186,12 +198,23 @@ export async function updateSponsorStore(id: number, data: Partial<BaseItem>): P
     console.warn("Failed to update sponsor in DB:", err);
   }
 
-  // 2. Update local JSON cache
+  // Update in-memory extra fields cache
+  if (data.logoScale !== undefined || data.logoPositionX !== undefined || data.logoPositionY !== undefined) {
+    const existing = getExtraFields(sponsorExtraFieldsCache, id, data.name || "");
+    setExtraFields(sponsorExtraFieldsCache, id, data.name || "", {
+      logoScale: data.logoScale ?? existing.logoScale ?? 100,
+      logoPositionX: data.logoPositionX ?? existing.logoPositionX ?? 50,
+      logoPositionY: data.logoPositionY ?? existing.logoPositionY ?? 50,
+    });
+  }
+
+  // 2. Re-fetch to get updated data
   const current = await getSponsorsStore();
   const index = current.findIndex((item) => item.id === id);
 
   if (index === -1) {
-    // Item doesn't exist locally, create it
+    if (!dbSuccess) return null;
+    // Item might have been created in DB but not in local cache
     const fallbackItem: BaseItem = {
       id,
       name: data.name || "Sponsor",
@@ -204,7 +227,6 @@ export async function updateSponsorStore(id: number, data: Partial<BaseItem>): P
       createdAt: new Date().toISOString(),
       ...data,
     };
-    await writeJsonFile(SPONSORS_FILE, [fallbackItem, ...current]);
     return fallbackItem;
   }
 
@@ -215,13 +237,17 @@ export async function updateSponsorStore(id: number, data: Partial<BaseItem>): P
     isVisible: data.isVisible ?? current[index].isVisible ?? true,
   };
 
-  current[index] = updatedItem;
-  await writeJsonFile(SPONSORS_FILE, current);
+  // Best-effort: update file cache
+  try {
+    current[index] = updatedItem;
+    writeJsonFile(SPONSORS_FILE, current);
+  } catch { /* Silently fail on Vercel */ }
+
   return updatedItem;
 }
 
 export async function deleteSponsorStore(id: number, name?: string): Promise<boolean> {
-  // 1. Delete from Supabase first
+  // 1. Delete from Supabase FIRST (this is the authoritative action)
   let dbDeleted = false;
   try {
     dbDeleted = await deleteSponsorFromDB(id, name);
@@ -229,37 +255,41 @@ export async function deleteSponsorStore(id: number, name?: string): Promise<boo
     console.warn("Failed to delete sponsor from DB:", err);
   }
 
-  // 2. Delete from local JSON cache
-  const current = await getSponsorsStore();
-  const filtered = current.filter((item) => {
-    if (item.id === id) return false;
-    if (name && item.name && item.name.toLowerCase() === name.toLowerCase()) return false;
-    return true;
-  });
+  // 2. Remove from in-memory extra fields cache
+  sponsorExtraFieldsCache.delete(`id:${id}`);
+  if (name) sponsorExtraFieldsCache.delete(`name:${name.toLowerCase()}`);
 
-  const fileDeleted = filtered.length !== current.length;
-  if (fileDeleted) {
-    await writeJsonFile(SPONSORS_FILE, filtered);
-  }
+  // 3. Best-effort: delete from local JSON cache
+  try {
+    const fileData = await readJsonFile<BaseItem[]>(SPONSORS_FILE);
+    if (fileData) {
+      const filtered = fileData.filter((item) => {
+        if (item.id === id) return false;
+        if (name && item.name && item.name.toLowerCase() === name.toLowerCase()) return false;
+        return true;
+      });
+      if (filtered.length !== fileData.length) {
+        writeJsonFile(SPONSORS_FILE, filtered);
+      }
+    }
+  } catch { /* Silently fail */ }
 
-  return dbDeleted || fileDeleted;
+  return dbDeleted;
 }
 
 // ===================================================
-// MEDIA PARTNERS STORE
+// MEDIA PARTNERS STORE — Supabase as source of truth
 // ===================================================
 export async function getMediaPartnersStore(): Promise<BaseItem[]> {
+  // Load extra fields from JSON into memory cache (one-time)
+  await loadExtraFieldsToCache(MEDIA_PARTNERS_FILE, mediaPartnerExtraFieldsCache);
+
   // 1. Try Supabase Database first (source of truth)
   try {
     const dbMedia = await fetchMediaPartnersFromDB();
-    if (dbMedia && dbMedia.length > 0) {
-      const extraFields = await readExtraFieldsMap(MEDIA_PARTNERS_FILE);
-
+    if (dbMedia !== null) {
       const items: BaseItem[] = dbMedia.map((m) => {
-        const byId = extraFields.get(`id:${m.id}`);
-        const byName = extraFields.get(`name:${m.name.toLowerCase()}`);
-        const extra = byId || byName || { logoScale: 100, logoPositionX: 50, logoPositionY: 50 };
-
+        const extra = getExtraFields(mediaPartnerExtraFieldsCache, m.id, m.name);
         return {
           id: m.id,
           name: m.name,
@@ -273,15 +303,15 @@ export async function getMediaPartnersStore(): Promise<BaseItem[]> {
         };
       });
 
-      // Sync JSON cache with DB data
-      await writeJsonFile(MEDIA_PARTNERS_FILE, items);
+      // Best-effort: sync JSON cache
+      writeJsonFile(MEDIA_PARTNERS_FILE, items);
       return items;
     }
   } catch (err) {
     console.warn("Error fetching media partners from DB, using fallback:", err);
   }
 
-  // 2. Fallback to file JSON store
+  // 2. Fallback to file JSON store (local dev only, if Supabase is offline)
   const fileData = await readJsonFile<BaseItem[]>(MEDIA_PARTNERS_FILE);
   if (fileData) {
     return fileData.map((item) => ({
@@ -290,18 +320,8 @@ export async function getMediaPartnersStore(): Promise<BaseItem[]> {
     }));
   }
 
-  // 3. First time: create from hardcoded defaults
-  const defaultMediaPartners: BaseItem[] = fallbackMediaPartners.map((m) => ({
-    id: m.id,
-    name: m.name,
-    logoUrl: m.logoUrl,
-    isVisible: m.isVisible ?? true,
-    logoScale: m.logoScale ?? 100,
-    logoPositionX: m.logoPositionX ?? 50,
-    logoPositionY: m.logoPositionY ?? 50,
-  }));
-  await writeJsonFile(MEDIA_PARTNERS_FILE, defaultMediaPartners);
-  return defaultMediaPartners;
+  // 3. If DB connection failed and no file exists, return empty array
+  return [];
 }
 
 export async function addMediaPartnerStore(partner: Omit<BaseItem, "id">, explicitId?: number): Promise<BaseItem> {
@@ -327,18 +347,28 @@ export async function addMediaPartnerStore(partner: Omit<BaseItem, "id">, explic
     isVisible: partner.isVisible ?? true,
   };
 
-  // 2. Update local JSON cache
-  const current = await getMediaPartnersStore();
-  const updated = [newMediaPartner, ...current.filter((m) => m.id !== finalId)];
-  await writeJsonFile(MEDIA_PARTNERS_FILE, updated);
+  // Save extra fields to in-memory cache
+  setExtraFields(mediaPartnerExtraFieldsCache, finalId, partner.name, {
+    logoScale: partner.logoScale ?? 100,
+    logoPositionX: partner.logoPositionX ?? 50,
+    logoPositionY: partner.logoPositionY ?? 50,
+  });
+
+  // Best-effort: update file cache
+  try {
+    const current = await getMediaPartnersStore();
+    const updated = [newMediaPartner, ...current.filter((m) => m.id !== finalId)];
+    writeJsonFile(MEDIA_PARTNERS_FILE, updated);
+  } catch { /* Silently fail */ }
 
   return newMediaPartner;
 }
 
 export async function updateMediaPartnerStore(id: number, data: Partial<BaseItem>): Promise<BaseItem | null> {
   // 1. Update Supabase first
+  let dbSuccess = false;
   try {
-    await updateMediaPartnerInDB(id, {
+    dbSuccess = await updateMediaPartnerInDB(id, {
       name: data.name,
       logo_url: data.logoUrl,
       website_url: data.websiteUrl,
@@ -348,11 +378,22 @@ export async function updateMediaPartnerStore(id: number, data: Partial<BaseItem
     console.warn("Failed to update media partner in DB:", err);
   }
 
-  // 2. Update local JSON cache
+  // Update in-memory extra fields cache
+  if (data.logoScale !== undefined || data.logoPositionX !== undefined || data.logoPositionY !== undefined) {
+    const existing = getExtraFields(mediaPartnerExtraFieldsCache, id, data.name || "");
+    setExtraFields(mediaPartnerExtraFieldsCache, id, data.name || "", {
+      logoScale: data.logoScale ?? existing.logoScale ?? 100,
+      logoPositionX: data.logoPositionX ?? existing.logoPositionX ?? 50,
+      logoPositionY: data.logoPositionY ?? existing.logoPositionY ?? 50,
+    });
+  }
+
+  // 2. Re-fetch to get updated data
   const current = await getMediaPartnersStore();
   const index = current.findIndex((item) => item.id === id);
 
   if (index === -1) {
+    if (!dbSuccess) return null;
     const fallbackItem: BaseItem = {
       id,
       name: data.name || "Media Partner",
@@ -365,7 +406,6 @@ export async function updateMediaPartnerStore(id: number, data: Partial<BaseItem
       createdAt: new Date().toISOString(),
       ...data,
     };
-    await writeJsonFile(MEDIA_PARTNERS_FILE, [fallbackItem, ...current]);
     return fallbackItem;
   }
 
@@ -376,13 +416,17 @@ export async function updateMediaPartnerStore(id: number, data: Partial<BaseItem
     isVisible: data.isVisible ?? current[index].isVisible ?? true,
   };
 
-  current[index] = updatedItem;
-  await writeJsonFile(MEDIA_PARTNERS_FILE, current);
+  // Best-effort: update file cache
+  try {
+    current[index] = updatedItem;
+    writeJsonFile(MEDIA_PARTNERS_FILE, current);
+  } catch { /* Silently fail */ }
+
   return updatedItem;
 }
 
 export async function deleteMediaPartnerStore(id: number, name?: string): Promise<boolean> {
-  // 1. Delete from Supabase first
+  // 1. Delete from Supabase FIRST (authoritative action)
   let dbDeleted = false;
   try {
     dbDeleted = await deleteMediaPartnerFromDB(id, name);
@@ -390,20 +434,26 @@ export async function deleteMediaPartnerStore(id: number, name?: string): Promis
     console.warn("Failed to delete media partner from DB:", err);
   }
 
-  // 2. Delete from local JSON cache
-  const current = await getMediaPartnersStore();
-  const filtered = current.filter((item) => {
-    if (item.id === id) return false;
-    if (name && item.name && item.name.toLowerCase() === name.toLowerCase()) return false;
-    return true;
-  });
+  // 2. Remove from in-memory extra fields cache
+  mediaPartnerExtraFieldsCache.delete(`id:${id}`);
+  if (name) mediaPartnerExtraFieldsCache.delete(`name:${name.toLowerCase()}`);
 
-  const fileDeleted = filtered.length !== current.length;
-  if (fileDeleted) {
-    await writeJsonFile(MEDIA_PARTNERS_FILE, filtered);
-  }
+  // 3. Best-effort: delete from local JSON cache
+  try {
+    const fileData = await readJsonFile<BaseItem[]>(MEDIA_PARTNERS_FILE);
+    if (fileData) {
+      const filtered = fileData.filter((item) => {
+        if (item.id === id) return false;
+        if (name && item.name && item.name.toLowerCase() === name.toLowerCase()) return false;
+        return true;
+      });
+      if (filtered.length !== fileData.length) {
+        writeJsonFile(MEDIA_PARTNERS_FILE, filtered);
+      }
+    }
+  } catch { /* Silently fail */ }
 
-  return dbDeleted || fileDeleted;
+  return dbDeleted;
 }
 
 // ===================================================

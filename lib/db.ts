@@ -35,14 +35,14 @@ export async function fetchSponsorsFromDB(): Promise<SponsorItem[] | null> {
     const { data, error } = await supabase
       .from("sponsors")
       .select("id, name, logo_url, website_url, is_visible, created_at")
-      .order("id", { ascending: false });
+      .order("id", { ascending: true });
 
-    if (error || !data) {
-      console.warn("Supabase fetch sponsors error:", error?.message);
+    if (error) {
+      console.warn("Supabase fetch sponsors error:", error.message);
       return null;
     }
 
-    return data.map((item) => ({
+    return (data || []).map((item) => ({
       ...item,
       is_visible: item.is_visible ? 1 : 0,
     })) as SponsorItem[];
@@ -99,16 +99,17 @@ export async function updateSponsorInDB(
 
     if (Object.keys(updatePayload).length === 0) return true;
 
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from("sponsors")
       .update(updatePayload)
-      .eq("id", id);
+      .eq("id", id)
+      .select();
 
     if (error) {
       console.warn("Supabase update sponsor error:", error.message);
       return false;
     }
-    return true;
+    return Boolean(data && data.length > 0);
   } catch (err: any) {
     console.warn("Supabase update sponsor exception:", err?.message);
     return false;
@@ -123,12 +124,12 @@ export async function deleteSponsorFromDB(id: number, name?: string): Promise<bo
     } else {
       query = query.eq("id", id);
     }
-    const { error } = await query;
+    const { data, error } = await query.select();
     if (error) {
       console.warn("Supabase delete sponsor error:", error.message);
       return false;
     }
-    return true;
+    return Boolean(data && data.length > 0);
   } catch (err: any) {
     console.warn("Supabase delete sponsor exception:", err?.message);
     return false;
@@ -143,14 +144,14 @@ export async function fetchMediaPartnersFromDB(): Promise<MediaPartnerItem[] | n
     const { data, error } = await supabase
       .from("media_partners")
       .select("id, name, logo_url, website_url, is_visible, created_at")
-      .order("id", { ascending: false });
+      .order("id", { ascending: true });
 
-    if (error || !data) {
-      console.warn("Supabase fetch media partners error:", error?.message);
+    if (error) {
+      console.warn("Supabase fetch media partners error:", error.message);
       return null;
     }
 
-    return data.map((item) => ({
+    return (data || []).map((item) => ({
       ...item,
       is_visible: item.is_visible ? 1 : 0,
     })) as MediaPartnerItem[];
@@ -207,16 +208,17 @@ export async function updateMediaPartnerInDB(
 
     if (Object.keys(updatePayload).length === 0) return true;
 
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from("media_partners")
       .update(updatePayload)
-      .eq("id", id);
+      .eq("id", id)
+      .select();
 
     if (error) {
       console.warn("Supabase update media partner error:", error.message);
       return false;
     }
-    return true;
+    return Boolean(data && data.length > 0);
   } catch (err: any) {
     console.warn("Supabase update media partner exception:", err?.message);
     return false;
@@ -231,12 +233,12 @@ export async function deleteMediaPartnerFromDB(id: number, name?: string): Promi
     } else {
       query = query.eq("id", id);
     }
-    const { error } = await query;
+    const { data, error } = await query.select();
     if (error) {
       console.warn("Supabase delete media partner error:", error.message);
       return false;
     }
-    return true;
+    return Boolean(data && data.length > 0);
   } catch (err: any) {
     console.warn("Supabase delete media partner exception:", err?.message);
     return false;
@@ -326,16 +328,17 @@ export async function updateTimelineInDB(
 
     if (Object.keys(updatePayload).length === 0) return true;
 
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from("timeline")
       .update(updatePayload)
-      .eq("id", id);
+      .eq("id", id)
+      .select();
 
     if (error) {
       console.warn("Supabase update timeline error:", error.message);
       return false;
     }
-    return true;
+    return Boolean(data && data.length > 0);
   } catch (err: any) {
     console.warn("Supabase update timeline exception:", err?.message);
     return false;
@@ -344,12 +347,12 @@ export async function updateTimelineInDB(
 
 export async function deleteTimelineFromDB(id: number): Promise<boolean> {
   try {
-    const { error } = await supabase.from("timeline").delete().eq("id", id);
+    const { data, error } = await supabase.from("timeline").delete().eq("id", id).select();
     if (error) {
       console.warn("Supabase delete timeline error:", error.message);
       return false;
     }
-    return true;
+    return Boolean(data && data.length > 0);
   } catch (err: any) {
     console.warn("Supabase delete timeline exception:", err?.message);
     return false;
@@ -405,16 +408,17 @@ export async function updateEventInDB(
 
     if (Object.keys(updatePayload).length === 0) return true;
 
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from("events")
       .update(updatePayload)
-      .eq("id", id);
+      .eq("id", id)
+      .select();
 
     if (error) {
       console.warn("Supabase update event error:", error.message);
       return false;
     }
-    return true;
+    return Boolean(data && data.length > 0);
   } catch (err: any) {
     console.warn("Supabase update event exception:", err?.message);
     return false;
@@ -504,16 +508,17 @@ export async function updateSpeakerInDB(
 
     if (Object.keys(updatePayload).length === 0) return true;
 
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from("speakers")
       .update(updatePayload)
-      .eq("id", id);
+      .eq("id", id)
+      .select();
 
     if (error) {
       console.warn("Supabase update speaker error:", error.message);
       return false;
     }
-    return true;
+    return Boolean(data && data.length > 0);
   } catch (err: any) {
     console.warn("Supabase update speaker exception:", err?.message);
     return false;
@@ -522,12 +527,12 @@ export async function updateSpeakerInDB(
 
 export async function deleteSpeakerFromDB(id: string): Promise<boolean> {
   try {
-    const { error } = await supabase.from("speakers").delete().eq("id", id);
+    const { data, error } = await supabase.from("speakers").delete().eq("id", id).select();
     if (error) {
       console.warn("Supabase delete speaker error:", error.message);
       return false;
     }
-    return true;
+    return Boolean(data && data.length > 0);
   } catch (err: any) {
     console.warn("Supabase delete speaker exception:", err?.message);
     return false;

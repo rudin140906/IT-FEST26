@@ -37,11 +37,11 @@ async function writeSpeakersFile(data: Speaker[]): Promise<boolean> {
   }
 }
 
-// Get all speakers (try MySQL first, fallback to JSON file store)
+// Get all speakers (try DB first, fallback to JSON file store)
 export async function getSpeakersStore(): Promise<Speaker[]> {
-  // 1. Try MySQL Database
+  // 1. Try Supabase Database
   const dbSpeakers = await fetchSpeakersFromDB();
-  if (dbSpeakers && dbSpeakers.length > 0) {
+  if (dbSpeakers !== null) {
     return dbSpeakers.map((s: SpeakerDBItem) => ({
       id: s.id,
       name: s.name,
@@ -60,9 +60,7 @@ export async function getSpeakersStore(): Promise<Speaker[]> {
     return stored;
   }
 
-  // First time: save default speakers
-  await writeSpeakersFile(fallbackSpeakers);
-  return fallbackSpeakers;
+  return [];
 }
 
 // Add new speaker

@@ -30,35 +30,49 @@ export async function GET() {
   }
 }
 
+async function handleEventUpdate(body: any) {
+  const { id, gformUrl, guidebookUrl, mascotUrl, title, description } = body;
+
+  if (!id) {
+    return NextResponse.json({ error: "Event ID is required" }, { status: 400 });
+  }
+
+  const updates: Record<string, string> = {};
+  if (gformUrl !== undefined) updates.gformUrl = gformUrl;
+  if (guidebookUrl !== undefined) updates.guidebookUrl = guidebookUrl;
+  if (mascotUrl !== undefined) updates.mascotUrl = mascotUrl;
+  if (title !== undefined) updates.title = title;
+  if (description !== undefined) updates.description = description;
+
+  const updated = await updateEventStore(id, updates);
+
+  if (!updated) {
+    return NextResponse.json({ error: "Event not found" }, { status: 404 });
+  }
+
+  invalidateEventsCache();
+
+  return NextResponse.json({
+    success: true,
+    message: "Event berhasil diperbarui",
+    event: updated,
+  });
+}
+
+export async function POST(request: Request) {
+  try {
+    const body = await request.json();
+    return await handleEventUpdate(body);
+  } catch (error) {
+    console.error("Events POST error:", error);
+    return NextResponse.json({ error: "Failed to update event" }, { status: 500 });
+  }
+}
+
 export async function PUT(request: Request) {
   try {
     const body = await request.json();
-    const { id, gformUrl, guidebookUrl, mascotUrl, title, description } = body;
-
-    if (!id) {
-      return NextResponse.json({ error: "Event ID is required" }, { status: 400 });
-    }
-
-    const updates: Record<string, string> = {};
-    if (gformUrl !== undefined) updates.gformUrl = gformUrl;
-    if (guidebookUrl !== undefined) updates.guidebookUrl = guidebookUrl;
-    if (mascotUrl !== undefined) updates.mascotUrl = mascotUrl;
-    if (title !== undefined) updates.title = title;
-    if (description !== undefined) updates.description = description;
-
-    const updated = await updateEventStore(id, updates);
-
-    if (!updated) {
-      return NextResponse.json({ error: "Event not found" }, { status: 404 });
-    }
-
-    invalidateEventsCache();
-
-    return NextResponse.json({
-      success: true,
-      message: "Event berhasil diperbarui",
-      event: updated,
-    });
+    return await handleEventUpdate(body);
   } catch (error) {
     console.error("Events PUT error:", error);
     return NextResponse.json({ error: "Failed to update event" }, { status: 500 });

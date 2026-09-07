@@ -44,6 +44,43 @@ export async function POST(request: Request) {
   try {
     invalidateTimelineCache();
     const body = await request.json();
+    const action = String(body.action || "create").toLowerCase();
+
+    if (action === "delete") {
+      const id = body.id;
+      if (!id) {
+        return NextResponse.json({ error: "ID acara wajib disertakan" }, { status: 400 });
+      }
+
+      const deleted = await deleteTimelineStore(Number(id));
+      if (!deleted) {
+        return NextResponse.json({ error: "Acara tidak ditemukan" }, { status: 404 });
+      }
+
+      return NextResponse.json({ success: true, message: "Acara timeline berhasil dihapus" });
+    }
+
+    if (action === "update") {
+      const { id, title, date, category, badgeColor, imageUrl } = body;
+      if (!id) {
+        return NextResponse.json({ error: "ID acara wajib disertakan" }, { status: 400 });
+      }
+
+      const updatedItem = await updateTimelineStore(Number(id), {
+        ...(title && { title: title.trim() }),
+        ...(date && { date: date.trim() }),
+        ...(category && { category: category.trim() }),
+        ...(badgeColor && { badgeColor }),
+        ...(imageUrl !== undefined && { imageUrl }),
+      });
+
+      if (!updatedItem) {
+        return NextResponse.json({ error: "Acara timeline tidak ditemukan" }, { status: 404 });
+      }
+
+      return NextResponse.json({ success: true, item: updatedItem });
+    }
+
     const { title, date, category, badgeColor, imageUrl } = body;
 
     if (!title || !date) {
@@ -61,7 +98,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ success: true, item: newItem }, { status: 201 });
   } catch (error) {
     console.error("POST timeline error:", error);
-    return NextResponse.json({ error: "Gagal menambah acara timeline" }, { status: 500 });
+    return NextResponse.json({ error: "Gagal memproses acara timeline" }, { status: 500 });
   }
 }
 
@@ -98,7 +135,16 @@ export async function DELETE(request: Request) {
   try {
     invalidateTimelineCache();
     const { searchParams } = new URL(request.url);
-    const idParam = searchParams.get("id");
+    let idParam = searchParams.get("id");
+
+    if (!idParam) {
+      try {
+        const body = await request.json();
+        idParam = body?.id ? String(body.id) : null;
+      } catch {
+        // no body provided
+      }
+    }
 
     if (!idParam) {
       return NextResponse.json({ error: "ID acara wajib disertakan" }, { status: 400 });

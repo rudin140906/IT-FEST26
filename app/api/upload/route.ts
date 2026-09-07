@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import path from "path";
+import fs from "fs/promises";
 import { supabase, STORAGE_BUCKET } from "@/lib/supabase";
 
 const ALLOWED_IMAGE_TYPES = ["image/png", "image/jpeg", "image/jpg", "image/webp", "image/svg+xml", "image/gif"];
@@ -38,7 +39,7 @@ export async function POST(request: Request) {
     } else {
       if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
         return NextResponse.json(
-          { error: "File harus berupa gambar (PNG, SVG, JPG, WEBP)" },
+          { error: "File harus berupa gambar (PNG, SVG, JPG, WEBP, GIF)" },
           { status: 400 }
         );
       }
@@ -55,39 +56,54 @@ export async function POST(request: Request) {
     const filename = `${safeBaseName}_${Date.now()}${fileExt}`;
     const storagePath = isGuidebook ? `guidebooks/${filename}` : `uploads/${filename}`;
 
-    // Upload to Supabase Storage
-    const { data: uploadData, error: uploadError } = await supabase.storage
-      .from(STORAGE_BUCKET)
-      .upload(storagePath, buffer, {
-        contentType: file.type || (isGuidebook ? "application/pdf" : "image/png"),
-        upsert: true,
-      });
+    // 1. Try uploading to Supabase Storage first
+    try {
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from(STORAGE_BUCKET)
+        .upload(storagePath, buffer, {
+          contentType: file.type || (isGuidebook ? "application/pdf" : "image/png"),
+          upsert: true,
+        });
 
-    if (uploadError) {
-      console.warn("Supabase storage upload error:", uploadError.message);
-      // If bucket doesn't exist yet, return helpful error
-      return NextResponse.json(
-        {
-          error: `Gagal upload ke Supabase Storage (${uploadError.message}). Pastikan bucket '${STORAGE_BUCKET}' sudah dibuat dan di-set Public di Supabase Storage Dashboard.`,
-        },
-        { status: 500 }
-      );
+      if (!uploadError) {
+        const { data: publicUrlData } = supabase.storage
+          .from(STORAGE_BUCKET)
+          .getPublicUrl(storagePath);
+
+        const publicUrl = publicUrlData.publicUrl;
+
+        return NextResponse.json({
+          success: true,
+          url: publicUrl,
+          publicUrl: publicUrl,
+          apiServedUrl: publicUrl,
+          filename,
+          isGuidebook,
+          storage: "supabase",
+        });
+      }
+
+      console.warn("Supabase storage upload error, using local fallback:", uploadError.message);
+    } catch (sbErr: any) {
+      console.warn("Supabase storage exception, using local fallback:", sbErr?.message);
     }
 
-    // Get public URL from Supabase Storage
-    const { data: publicUrlData } = supabase.storage
-      .from(STORAGE_BUCKET)
-      .getPublicUrl(storagePath);
+    // 2. Fallback: Save file to local public/uploads directory
+    const targetDir = path.join(process.cwd(), "public", isGuidebook ? "uploads/guidebooks" : "uploads");
+    await fs.mkdir(targetDir, { recursive: true });
+    const localFilePath = path.join(targetDir, filename);
+    await fs.writeFile(localFilePath, buffer);
 
-    const publicUrl = publicUrlData.publicUrl;
+    const localUrl = `/uploads/${isGuidebook ? "guidebooks/" : ""}${filename}`;
 
     return NextResponse.json({
       success: true,
-      url: publicUrl,
-      publicUrl: publicUrl,
-      apiServedUrl: publicUrl,
+      url: localUrl,
+      publicUrl: localUrl,
+      apiServedUrl: localUrl,
       filename,
       isGuidebook,
+      storage: "local",
     });
   } catch (error: any) {
     console.error("Upload error:", error);

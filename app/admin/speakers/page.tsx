@@ -306,7 +306,7 @@ export default function AdminSpeakersPage() {
       const res = await fetch(apiPath("/speakers"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "delete", id: target.id }),
+        body: JSON.stringify({ action: "delete", id: target.id, name: target.name }),
       });
 
       if (res.ok) {

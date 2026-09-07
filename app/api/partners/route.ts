@@ -67,73 +67,85 @@ export async function GET(request: Request) {
 
   let resultData: PartnersApiResponse | null = null;
 
+  const fileSponsors = await getSponsorsStore();
+  const fileMedia = await getMediaPartnersStore();
+
+  let sponsors: PartnerApiItem[] = [];
+  let mediaPartners: PartnerApiItem[] = [];
+  let usedDb = false;
+
   try {
     const dbSponsors = await fetchSponsorsFromDB();
-    const dbMedia = await fetchMediaPartnersFromDB();
-
-    if ((dbSponsors && dbSponsors.length > 0) || (dbMedia && dbMedia.length > 0)) {
-      const sponsors = (dbSponsors || []).map((p) => ({
-        id: p.id,
-        name: p.name,
-        logoUrl: p.logo_url,
-        type: "sponsor" as const,
-        websiteUrl: normalizePartnerWebsiteUrl(p.website_url),
-        isVisible: p.is_visible !== 0,
-        logoScale: 100,
-        logoPositionX: 50,
-        logoPositionY: 50,
-      }));
-
-      const mediaPartners = (dbMedia || []).map((p) => ({
-        id: p.id,
-        name: p.name,
-        logoUrl: p.logo_url,
-        type: "media_partner" as const,
-        websiteUrl: normalizePartnerWebsiteUrl(p.website_url),
-        isVisible: p.is_visible !== 0,
-        logoScale: 100,
-        logoPositionX: 50,
-        logoPositionY: 50,
-      }));
-
-      resultData = {
-        all: includeHidden ? [...sponsors, ...mediaPartners] : [...sponsors, ...mediaPartners].filter((item) => item.isVisible !== false),
-        sponsors: includeHidden ? sponsors : sponsors.filter((item) => item.isVisible !== false),
-        mediaPartners: includeHidden ? mediaPartners : mediaPartners.filter((item) => item.isVisible !== false),
-        source: "mysql",
-      };
+    if (dbSponsors && dbSponsors.length > 0) {
+      usedDb = true;
+      sponsors = dbSponsors.map((p) => {
+        const match = fileSponsors.find((fs) => fs.id === p.id || fs.name.toLowerCase() === p.name.toLowerCase());
+        return {
+          id: p.id,
+          name: p.name,
+          logoUrl: p.logo_url,
+          type: "sponsor" as const,
+          websiteUrl: normalizePartnerWebsiteUrl(p.website_url),
+          isVisible: p.is_visible !== 0,
+          logoScale: match?.logoScale ?? 100,
+          logoPositionX: match?.logoPositionX ?? 50,
+          logoPositionY: match?.logoPositionY ?? 50,
+        };
+      });
     }
   } catch (error) {
-    console.error("API partners route DB read warning:", error);
+    console.error("API partners route DB sponsors read warning:", error);
   }
 
-  if (!resultData) {
-    // Fallback to local JSON file stores
-    const fileSponsors = await getSponsorsStore();
-    const fileMedia = await getMediaPartnersStore();
-
-    const sponsors = fileSponsors.map((s) => ({
+  if (sponsors.length === 0) {
+    sponsors = fileSponsors.map((s) => ({
       ...s,
       type: "sponsor" as const,
       websiteUrl: normalizePartnerWebsiteUrl(s.websiteUrl),
       isVisible: s.isVisible ?? true,
     }));
-    const mediaPartners = fileMedia.map((m) => ({
+  }
+
+  try {
+    const dbMedia = await fetchMediaPartnersFromDB();
+    if (dbMedia && dbMedia.length > 0) {
+      usedDb = true;
+      mediaPartners = dbMedia.map((p) => {
+        const match = fileMedia.find((fm) => fm.id === p.id || fm.name.toLowerCase() === p.name.toLowerCase());
+        return {
+          id: p.id,
+          name: p.name,
+          logoUrl: p.logo_url,
+          type: "media_partner" as const,
+          websiteUrl: normalizePartnerWebsiteUrl(p.website_url),
+          isVisible: p.is_visible !== 0,
+          logoScale: match?.logoScale ?? 100,
+          logoPositionX: match?.logoPositionX ?? 50,
+          logoPositionY: match?.logoPositionY ?? 50,
+        };
+      });
+    }
+  } catch (error) {
+    console.error("API partners route DB media read warning:", error);
+  }
+
+  if (mediaPartners.length === 0) {
+    mediaPartners = fileMedia.map((m) => ({
       ...m,
       type: "media_partner" as const,
       websiteUrl: normalizePartnerWebsiteUrl(m.websiteUrl),
       isVisible: m.isVisible ?? true,
     }));
-
-    const combined = [...sponsors, ...mediaPartners];
-
-    resultData = {
-      all: includeHidden ? combined : combined.filter((item) => item.isVisible !== false),
-      sponsors: includeHidden ? sponsors : sponsors.filter((item) => item.isVisible !== false),
-      mediaPartners: includeHidden ? mediaPartners : mediaPartners.filter((item) => item.isVisible !== false),
-      source: "file",
-    };
   }
+
+  const combined = [...sponsors, ...mediaPartners];
+
+  resultData = {
+    all: includeHidden ? combined : combined.filter((item) => item.isVisible !== false),
+    sponsors: includeHidden ? sponsors : sponsors.filter((item) => item.isVisible !== false),
+    mediaPartners: includeHidden ? mediaPartners : mediaPartners.filter((item) => item.isVisible !== false),
+    source: usedDb ? "mysql" : "file",
+  };
 
   partnersCache.set(cacheKey, { data: resultData, timestamp: now });
 
@@ -159,13 +171,13 @@ export async function POST(request: Request) {
       }
 
       if (type === "sponsor") {
-        await deleteSponsorStore(numId);
+        await deleteSponsorStore(numId, name);
         await deleteSponsorFromDB(numId);
         return NextResponse.json({ success: true, message: "Sponsor berhasil dihapus" });
       }
 
       if (type === "media_partner") {
-        await deleteMediaPartnerStore(numId);
+        await deleteMediaPartnerStore(numId, name);
         await deleteMediaPartnerFromDB(numId);
         return NextResponse.json({ success: true, message: "Media partner berhasil dihapus" });
       }
@@ -256,6 +268,12 @@ export async function POST(request: Request) {
     }
 
     if (type === "sponsor") {
+      const dbId = await insertSponsorToDB({
+        name,
+        logo_url: logoUrl,
+        website_url: normalizedWebsiteUrl,
+        is_visible: isVisible === false ? 0 : 1,
+      });
       const newSponsor = await addSponsorStore({
         name,
         logoUrl,
@@ -264,15 +282,15 @@ export async function POST(request: Request) {
         logoScale: logoScale ?? 100,
         logoPositionX: logoPositionX ?? 50,
         logoPositionY: logoPositionY ?? 50,
-      });
-      await insertSponsorToDB({
+      }, dbId || undefined);
+      return NextResponse.json({ success: true, partner: { ...newSponsor, type: "sponsor" } }, { status: 201 });
+    } else {
+      const dbId = await insertMediaPartnerToDB({
         name,
         logo_url: logoUrl,
         website_url: normalizedWebsiteUrl,
         is_visible: isVisible === false ? 0 : 1,
       });
-      return NextResponse.json({ success: true, partner: { ...newSponsor, type: "sponsor" } }, { status: 201 });
-    } else {
       const newMedia = await addMediaPartnerStore({
         name,
         logoUrl,
@@ -281,13 +299,7 @@ export async function POST(request: Request) {
         logoScale: logoScale ?? 100,
         logoPositionX: logoPositionX ?? 50,
         logoPositionY: logoPositionY ?? 50,
-      });
-      await insertMediaPartnerToDB({
-        name,
-        logo_url: logoUrl,
-        website_url: normalizedWebsiteUrl,
-        is_visible: isVisible === false ? 0 : 1,
-      });
+      }, dbId || undefined);
       return NextResponse.json({ success: true, partner: { ...newMedia, type: "media_partner" } }, { status: 201 });
     }
   } catch (error) {

@@ -76,12 +76,12 @@ export async function getSponsorsStore(): Promise<BaseItem[]> {
   return data.map((item) => normalizeVisibility(item));
 }
 
-export async function addSponsorStore(sponsor: Omit<BaseItem, "id">): Promise<BaseItem> {
+export async function addSponsorStore(sponsor: Omit<BaseItem, "id">, explicitId?: number): Promise<BaseItem> {
   const current = await getSponsorsStore();
   const maxId = current.reduce((max, item) => (item.id > max ? item.id : max), 0);
   const newSponsor: BaseItem = {
     ...sponsor,
-    id: maxId + 1,
+    id: explicitId || maxId + 1,
     createdAt: new Date().toISOString(),
     isVisible: sponsor.isVisible ?? true,
   };
@@ -95,7 +95,22 @@ export async function updateSponsorStore(id: number, data: Partial<BaseItem>): P
   const current = await getSponsorsStore();
   const index = current.findIndex((item) => item.id === id);
 
-  if (index === -1) return null;
+  if (index === -1) {
+    const fallbackItem: BaseItem = {
+      id,
+      name: data.name || "Sponsor",
+      logoUrl: data.logoUrl || "",
+      websiteUrl: data.websiteUrl || "",
+      isVisible: data.isVisible ?? true,
+      logoScale: data.logoScale ?? 100,
+      logoPositionX: data.logoPositionX ?? 50,
+      logoPositionY: data.logoPositionY ?? 50,
+      createdAt: new Date().toISOString(),
+      ...data,
+    };
+    await writeJsonFile(SPONSORS_FILE, [fallbackItem, ...current]);
+    return fallbackItem;
+  }
 
   const updatedItem: BaseItem = {
     ...current[index],
@@ -109,9 +124,13 @@ export async function updateSponsorStore(id: number, data: Partial<BaseItem>): P
   return updatedItem;
 }
 
-export async function deleteSponsorStore(id: number): Promise<boolean> {
+export async function deleteSponsorStore(id: number, name?: string): Promise<boolean> {
   const current = await getSponsorsStore();
-  const filtered = current.filter((item) => item.id !== id);
+  const filtered = current.filter((item) => {
+    if (item.id === id) return false;
+    if (name && item.name && item.name.toLowerCase() === name.toLowerCase()) return false;
+    return true;
+  });
 
   if (filtered.length === current.length) return false;
 
@@ -140,12 +159,12 @@ export async function getMediaPartnersStore(): Promise<BaseItem[]> {
   return data.map((item) => normalizeVisibility(item));
 }
 
-export async function addMediaPartnerStore(partner: Omit<BaseItem, "id">): Promise<BaseItem> {
+export async function addMediaPartnerStore(partner: Omit<BaseItem, "id">, explicitId?: number): Promise<BaseItem> {
   const current = await getMediaPartnersStore();
   const maxId = current.reduce((max, item) => (item.id > max ? item.id : max), 0);
   const newMediaPartner: BaseItem = {
     ...partner,
-    id: maxId + 1,
+    id: explicitId || maxId + 1,
     createdAt: new Date().toISOString(),
     isVisible: partner.isVisible ?? true,
   };
@@ -159,7 +178,22 @@ export async function updateMediaPartnerStore(id: number, data: Partial<BaseItem
   const current = await getMediaPartnersStore();
   const index = current.findIndex((item) => item.id === id);
 
-  if (index === -1) return null;
+  if (index === -1) {
+    const fallbackItem: BaseItem = {
+      id,
+      name: data.name || "Media Partner",
+      logoUrl: data.logoUrl || "",
+      websiteUrl: data.websiteUrl || "",
+      isVisible: data.isVisible ?? true,
+      logoScale: data.logoScale ?? 100,
+      logoPositionX: data.logoPositionX ?? 50,
+      logoPositionY: data.logoPositionY ?? 50,
+      createdAt: new Date().toISOString(),
+      ...data,
+    };
+    await writeJsonFile(MEDIA_PARTNERS_FILE, [fallbackItem, ...current]);
+    return fallbackItem;
+  }
 
   const updatedItem: BaseItem = {
     ...current[index],
@@ -173,9 +207,13 @@ export async function updateMediaPartnerStore(id: number, data: Partial<BaseItem
   return updatedItem;
 }
 
-export async function deleteMediaPartnerStore(id: number): Promise<boolean> {
+export async function deleteMediaPartnerStore(id: number, name?: string): Promise<boolean> {
   const current = await getMediaPartnersStore();
-  const filtered = current.filter((item) => item.id !== id);
+  const filtered = current.filter((item) => {
+    if (item.id === id) return false;
+    if (name && item.name && item.name.toLowerCase() === name.toLowerCase()) return false;
+    return true;
+  });
 
   if (filtered.length === current.length) return false;
 

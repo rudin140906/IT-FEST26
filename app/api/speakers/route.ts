@@ -40,6 +40,44 @@ export async function POST(request: Request) {
   try {
     invalidateSpeakersCache();
     const body = await request.json();
+    const action = String(body.action || "create").toLowerCase();
+
+    if (action === "delete") {
+      const id = body.id;
+      if (!id) {
+        return NextResponse.json({ error: "ID pemateri wajib disertakan" }, { status: 400 });
+      }
+
+      const deleted = await deleteSpeakerStore(String(id));
+      if (!deleted) {
+        return NextResponse.json({ error: "Pemateri tidak ditemukan" }, { status: 404 });
+      }
+
+      return NextResponse.json({ success: true, message: "Pemateri berhasil dihapus" });
+    }
+
+    if (action === "update") {
+      const { id, name, role, category, photo, cv, color } = body;
+      if (!id) {
+        return NextResponse.json({ error: "ID pemateri wajib disertakan" }, { status: 400 });
+      }
+
+      const updated = await updateSpeakerStore(String(id), {
+        ...(name && { name: name.trim() }),
+        ...(role && { role: role.trim() }),
+        ...(category && { category }),
+        ...(photo !== undefined && { photo }),
+        ...(cv !== undefined && { cv }),
+        ...(color && { color }),
+      });
+
+      if (!updated) {
+        return NextResponse.json({ error: "Pemateri tidak ditemukan" }, { status: 404 });
+      }
+
+      return NextResponse.json({ success: true, speaker: updated });
+    }
+
     const { name, role, category, photo, cv, color } = body;
 
     if (!name || !role) {
@@ -61,7 +99,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ success: true, speaker: newSpeaker }, { status: 201 });
   } catch (error) {
     console.error("POST speaker error:", error);
-    return NextResponse.json({ error: "Gagal menyimpan data pemateri" }, { status: 500 });
+    return NextResponse.json({ error: "Gagal memproses data pemateri" }, { status: 500 });
   }
 }
 
@@ -75,7 +113,7 @@ export async function PUT(request: Request) {
       return NextResponse.json({ error: "ID pemateri wajib disertakan" }, { status: 400 });
     }
 
-    const updated = await updateSpeakerStore(id, {
+    const updated = await updateSpeakerStore(String(id), {
       ...(name && { name: name.trim() }),
       ...(role && { role: role.trim() }),
       ...(category && { category }),
@@ -99,13 +137,22 @@ export async function DELETE(request: Request) {
   try {
     invalidateSpeakersCache();
     const { searchParams } = new URL(request.url);
-    const id = searchParams.get("id");
+    let id = searchParams.get("id");
+
+    if (!id) {
+      try {
+        const body = await request.json();
+        id = body?.id ? String(body.id) : null;
+      } catch {
+        // no body
+      }
+    }
 
     if (!id) {
       return NextResponse.json({ error: "ID pemateri wajib disertakan" }, { status: 400 });
     }
 
-    const deleted = await deleteSpeakerStore(id);
+    const deleted = await deleteSpeakerStore(String(id));
     if (!deleted) {
       return NextResponse.json({ error: "Pemateri tidak ditemukan" }, { status: 404 });
     }

@@ -468,7 +468,7 @@ export default function AdminPartnersPage() {
       const res = await fetch(apiPath("/partners"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "delete", id: target.id, type: target.type }),
+        body: JSON.stringify({ action: "delete", id: target.id, type: target.type, name: target.name }),
       });
 
       if (res.ok) {
@@ -597,7 +597,7 @@ export default function AdminPartnersPage() {
       const res = await fetch(apiPath("/timeline"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "delete", id: target.id }),
+        body: JSON.stringify({ action: "delete", id: target.id, title: target.title }),
       });
 
       if (res.ok) {

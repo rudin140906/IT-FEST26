@@ -1,38 +1,68 @@
 [
   {
-    "id": 101,
-    "name": "HIMA IF",
-    "logoUrl": "/logos/media_partners/hima_if.svg",
-    "isVisible": true
-  },
-  {
-    "id": 102,
-    "name": "HMI",
-    "logoUrl": "/logos/media_partners/hmi.svg",
-    "isVisible": true
-  },
-  {
-    "id": 103,
-    "name": "CMS",
-    "logoUrl": "/logos/media_partners/cms.svg",
-    "isVisible": true
-  },
-  {
-    "id": 104,
-    "name": "HMJ AOK",
-    "logoUrl": "/logos/media_partners/hmj_aok.svg",
-    "isVisible": true
-  },
-  {
-    "id": 105,
-    "name": "BNCC",
-    "logoUrl": "/logos/media_partners/bncc.svg",
-    "isVisible": true
-  },
-  {
-    "id": 106,
+    "id": 13,
     "name": "HIMA ILKOM FMIPA UNNES",
     "logoUrl": "/logos/media_partners/hima_ilkom.svg",
-    "isVisible": true
+    "websiteUrl": "",
+    "isVisible": true,
+    "logoScale": 100,
+    "logoPositionX": 50,
+    "logoPositionY": 50,
+    "createdAt": "2026-09-07T12:27:04.033535+00:00"
+  },
+  {
+    "id": 12,
+    "name": "BNCC",
+    "logoUrl": "/logos/media_partners/bncc.svg",
+    "websiteUrl": "",
+    "isVisible": true,
+    "logoScale": 100,
+    "logoPositionX": 50,
+    "logoPositionY": 50,
+    "createdAt": "2026-09-07T12:27:04.033535+00:00"
+  },
+  {
+    "id": 11,
+    "name": "HMJ AOK",
+    "logoUrl": "/logos/media_partners/hmj_aok.svg",
+    "websiteUrl": "",
+    "isVisible": true,
+    "logoScale": 100,
+    "logoPositionX": 50,
+    "logoPositionY": 50,
+    "createdAt": "2026-09-07T12:27:04.033535+00:00"
+  },
+  {
+    "id": 10,
+    "name": "CMS",
+    "logoUrl": "/logos/media_partners/cms.svg",
+    "websiteUrl": "",
+    "isVisible": true,
+    "logoScale": 100,
+    "logoPositionX": 50,
+    "logoPositionY": 50,
+    "createdAt": "2026-09-07T12:27:04.033535+00:00"
+  },
+  {
+    "id": 9,
+    "name": "HMI",
+    "logoUrl": "/logos/media_partners/hmi.svg",
+    "websiteUrl": "",
+    "isVisible": true,
+    "logoScale": 100,
+    "logoPositionX": 50,
+    "logoPositionY": 50,
+    "createdAt": "2026-09-07T12:27:04.033535+00:00"
+  },
+  {
+    "id": 8,
+    "name": "HIMA IF",
+    "logoUrl": "/logos/media_partners/hima_if.svg",
+    "websiteUrl": "",
+    "isVisible": true,
+    "logoScale": 100,
+    "logoPositionX": 50,
+    "logoPositionY": 50,
+    "createdAt": "2026-09-07T12:27:04.033535+00:00"
   }
 ]

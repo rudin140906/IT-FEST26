@@ -311,9 +311,14 @@ export default function AdminSpeakersPage() {
 
       if (res.ok) {
         showToast(`Pemateri "${target.name}" berhasil dihapus!`, "success");
+      } else {
+        const errData = await res.json().catch(() => ({}));
+        showToast(errData.error || "Gagal menghapus data pemateri", "error");
       }
       fetchSpeakers();
-    } catch {
+    } catch (err) {
+      console.error(err);
+      showToast("Terjadi masalah saat menghapus data pemateri", "error");
       fetchSpeakers();
     } finally {
       setDeleting(false);

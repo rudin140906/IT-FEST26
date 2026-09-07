@@ -173,3 +173,25 @@ INSERT INTO events (id, title, category, category_label, description, icon_type,
 INSERT INTO speakers (id, name, role, category, photo, photo_position, cv, color) VALUES
 ('avip-syaifulloh', 'Avip Syaifulloh, S.T.', 'CEO WPU Course', 'guest-star', '/speakers/avip-syaifulloh.jpg', 'center 25%', '/speakers/cv-avip-syaifulloh.pdf', 'pink'),
 ('rahmi-liza', 'Rahmi Liza, S.Tr.Kom., M.Sc.', 'Software Engineer', 'speaker', '/speakers/rahmi-liza.jpg', 'center 60%', '/speakers/cv-rahmi-liza.pdf', 'cyan');
+
+-- ===================================================
+-- 7. SUPABASE STORAGE BUCKET SETUP (itfest)
+-- ===================================================
+-- Buat bucket 'itfest' untuk upload logo dan berkas PDF
+INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+VALUES ('itfest', 'itfest', true, 31457280, ARRAY['image/png', 'image/jpeg', 'image/jpg', 'image/webp', 'image/svg+xml', 'image/gif', 'application/pdf'])
+ON CONFLICT (id) DO UPDATE SET public = true;
+
+-- Storage RLS Policies
+DROP POLICY IF EXISTS "Public storage read" ON storage.objects;
+CREATE POLICY "Public storage read" ON storage.objects FOR SELECT USING (bucket_id = 'itfest');
+
+DROP POLICY IF EXISTS "Public storage insert" ON storage.objects;
+CREATE POLICY "Public storage insert" ON storage.objects FOR INSERT WITH CHECK (bucket_id = 'itfest');
+
+DROP POLICY IF EXISTS "Public storage update" ON storage.objects;
+CREATE POLICY "Public storage update" ON storage.objects FOR UPDATE USING (bucket_id = 'itfest');
+
+DROP POLICY IF EXISTS "Public storage delete" ON storage.objects;
+CREATE POLICY "Public storage delete" ON storage.objects FOR DELETE USING (bucket_id = 'itfest');
+

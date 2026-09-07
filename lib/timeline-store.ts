@@ -107,13 +107,22 @@ export async function updateTimelineStore(id: number, itemData: Partial<Timeline
 }
 
 export async function deleteTimelineStore(id: number): Promise<boolean> {
-  await deleteTimelineFromDB(id);
+  const dbDeleted = await deleteTimelineFromDB(id);
 
-  const current = await getTimelineStore();
-  const filtered = current.filter((i) => i.id !== id);
+  let fileDeleted = false;
+  try {
+    const fileData = await fs.readFile(FILE_PATH, "utf-8");
+    const parsed = JSON.parse(fileData);
+    if (Array.isArray(parsed)) {
+      const filtered = parsed.filter((i) => i.id !== id);
+      if (filtered.length !== parsed.length) {
+        await saveTimelineStore(filtered);
+        fileDeleted = true;
+      }
+    }
+  } catch (err) {
+    console.error("Error updating local timeline file after delete:", err);
+  }
 
-  if (filtered.length === current.length) return false;
-
-  await saveTimelineStore(filtered);
-  return true;
+  return dbDeleted || fileDeleted;
 }

@@ -137,12 +137,22 @@ export async function updateSpeakerStore(
 
 // Delete speaker
 export async function deleteSpeakerStore(id: string): Promise<boolean> {
-  await deleteSpeakerFromDB(id);
+  const dbDeleted = await deleteSpeakerFromDB(id);
 
-  const current = await getSpeakersStore();
-  const filtered = current.filter((s) => s.id !== id);
-  if (filtered.length === current.length) return false;
+  let fileDeleted = false;
+  try {
+    const fileData = await fs.readFile(SPEAKERS_FILE, "utf-8");
+    const parsed = JSON.parse(fileData);
+    if (Array.isArray(parsed)) {
+      const filtered = parsed.filter((s: Speaker) => s.id !== id);
+      if (filtered.length !== parsed.length) {
+        await writeSpeakersFile(filtered);
+        fileDeleted = true;
+      }
+    }
+  } catch (err) {
+    console.error("Error updating local speakers file after delete:", err);
+  }
 
-  await writeSpeakersFile(filtered);
-  return true;
+  return dbDeleted || fileDeleted;
 }

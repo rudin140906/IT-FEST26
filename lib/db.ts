@@ -115,9 +115,15 @@ export async function updateSponsorInDB(
   }
 }
 
-export async function deleteSponsorFromDB(id: number): Promise<boolean> {
+export async function deleteSponsorFromDB(id: number, name?: string): Promise<boolean> {
   try {
-    const { error } = await supabase.from("sponsors").delete().eq("id", id);
+    let query = supabase.from("sponsors").delete();
+    if (name) {
+      query = query.or(`id.eq.${id},name.ilike.${name}`);
+    } else {
+      query = query.eq("id", id);
+    }
+    const { error } = await query;
     if (error) {
       console.warn("Supabase delete sponsor error:", error.message);
       return false;
@@ -217,9 +223,15 @@ export async function updateMediaPartnerInDB(
   }
 }
 
-export async function deleteMediaPartnerFromDB(id: number): Promise<boolean> {
+export async function deleteMediaPartnerFromDB(id: number, name?: string): Promise<boolean> {
   try {
-    const { error } = await supabase.from("media_partners").delete().eq("id", id);
+    let query = supabase.from("media_partners").delete();
+    if (name) {
+      query = query.or(`id.eq.${id},name.ilike.${name}`);
+    } else {
+      query = query.eq("id", id);
+    }
+    const { error } = await query;
     if (error) {
       console.warn("Supabase delete media partner error:", error.message);
       return false;

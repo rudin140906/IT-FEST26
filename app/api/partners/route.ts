@@ -172,13 +172,13 @@ export async function POST(request: Request) {
 
       if (type === "sponsor") {
         await deleteSponsorStore(numId, name);
-        await deleteSponsorFromDB(numId);
+        await deleteSponsorFromDB(numId, name);
         return NextResponse.json({ success: true, message: "Sponsor berhasil dihapus" });
       }
 
       if (type === "media_partner") {
         await deleteMediaPartnerStore(numId, name);
-        await deleteMediaPartnerFromDB(numId);
+        await deleteMediaPartnerFromDB(numId, name);
         return NextResponse.json({ success: true, message: "Media partner berhasil dihapus" });
       }
 

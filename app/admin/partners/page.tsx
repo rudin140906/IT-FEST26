@@ -472,11 +472,15 @@ export default function AdminPartnersPage() {
       });
 
       if (res.ok) {
-        showToast(`${target.type === "sponsor" ? "Sponsor" : "Media Partner"} "${target.name}" berhasil dihapus.`);
+        showToast(`${target.type === "sponsor" ? "Sponsor" : "Media Partner"} "${target.name}" berhasil dihapus.`, "success");
+      } else {
+        const errData = await res.json().catch(() => ({}));
+        showToast(errData.error || "Gagal menghapus partner dari server", "error");
       }
       fetchPartners();
     } catch (err) {
       console.error(err);
+      showToast("Terjadi kesalahan saat menghapus partner", "error");
       fetchPartners();
     }
   };
@@ -601,11 +605,15 @@ export default function AdminPartnersPage() {
       });
 
       if (res.ok) {
-        showToast("Acara timeline berhasil dihapus.");
+        showToast("Acara timeline berhasil dihapus.", "success");
+      } else {
+        const errData = await res.json().catch(() => ({}));
+        showToast(errData.error || "Gagal menghapus acara timeline", "error");
       }
       fetchTimeline();
     } catch (err) {
       console.error(err);
+      showToast("Terjadi kesalahan saat menghapus acara timeline", "error");
       fetchTimeline();
     }
   };
